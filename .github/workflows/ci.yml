@@ -65,6 +65,7 @@ jobs:
           PLATFORM: ${{ steps.leg.outputs.platform }}
           ARCHIVE: ${{ steps.leg.outputs.archive }}
           THESEUS_RELEASES_URL: ${{ steps.leg.outputs.releases_url }}
+          MAX_GLIBC: ${{ steps.leg.outputs.max_glibc }}
         run: bash scripts/build_extension.sh
       - name: Check archive layout and sidecar
         env:

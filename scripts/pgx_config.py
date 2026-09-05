@@ -111,6 +111,8 @@ class Config:
         Base URL of the Theseus release downloads.
     build_image : str
         Digest-pinned container image the build runs in.
+    max_glibc : str
+        Highest ``GLIBC_x.y`` symbol version an archive may reference.
     smoke : SmokeLeg
         The leg a pull request exercises end to end.
     extensions : tuple of Extension
@@ -121,6 +123,7 @@ class Config:
     targets: tuple[Target, ...]
     releases_url: str
     build_image: str
+    max_glibc: str
     smoke: SmokeLeg
     extensions: tuple[Extension, ...]
 
@@ -295,6 +298,7 @@ def parse_config(text: str) -> Config:
     image = _require(build, "image", "build")
     if not isinstance(image, str) or "@sha256:" not in image:
         raise ConfigError("build.image must be pinned by digest (…@sha256:…)")
+    max_glibc = _require_str(build, "max_glibc", "build", re.compile(r"^\d+\.\d+$"))
     versions = _require_list(postgresql, "versions", "postgresql", _VERSION_RE)
     targets = _parse_targets(_require(raw, "targets", "top level"))
     return Config(
@@ -302,6 +306,7 @@ def parse_config(text: str) -> Config:
         targets=targets,
         releases_url=_require_url(postgresql, "releases_url", "postgresql"),
         build_image=image,
+        max_glibc=max_glibc,
         smoke=_parse_smoke(
             _require(raw, "smoke", "top level"), extensions, versions, targets
         ),

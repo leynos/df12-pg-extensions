@@ -49,16 +49,20 @@ them come from a matrix leg; none has a hard-coded fallback.
 
 ## Container build requirements
 
-The build image is `debian:12`, pinned by index digest, because Theseus
-compiles its Linux binaries in that image; matching it keeps the glibc
-symbol versions the shared object needs within what the PostgreSQL binary
-already requires. The build passes `OPTFLAGS=""` (pgvector defaults to
-`-march=native`) and `with_llvm=no` (the Theseus tree was configured with
-LLVM, and PGXS would otherwise emit bitcode into `lib/bitcode/`, which the
-layout rules refuse). Only `lib/*.so`, `<name>.control` and `<name>--*.sql`
-are packaged; headers are dropped.
+The build image is `debian:11`, pinned by index digest. The Theseus
+`postgres` binary references glibc symbol versions up to `GLIBC_2.34`; an
+extension built on a newer base could reference `GLIBC_2.36` symbols and then
+fail to load on a host (RHEL 9, Ubuntu 22.04) that runs the server fine. So
+the base must stay at or below 2.34 (debian:11 is at 2.31) and
+`[build].max_glibc` records the floor; `build_in_container.sh` reads every
+shared object's `GLIBC_*` versions with `objdump` and fails above it. The
+build passes `OPTFLAGS=""` (pgvector defaults to `-march=native`) and
+`with_llvm=no` (the Theseus tree was configured with LLVM, and PGXS would
+otherwise emit bitcode into `lib/bitcode/`, which the layout rules refuse).
+Only `lib/*.so`, `<name>.control` and `<name>--*.sql` are packaged; headers
+are dropped.
 
-Updating the image digest: run `skopeo inspect --raw docker://debian:12 |
+Updating the image digest: run `skopeo inspect --raw docker://debian:11 |
 sha256sum` (or read `docker-content-digest` from the registry) and put the
 index digest in `[build].image`.
 

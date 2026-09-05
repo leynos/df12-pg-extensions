@@ -28,7 +28,7 @@ def build_matrix(config: Config) -> list[dict[str, str]]:
     list of dict
         Entries whose keys are the environment the build scripts need:
         ``name``, ``package``, ``version``, ``repository``, ``tag``,
-        ``commit``, ``smoke_sql``, ``postgresql``, ``releases_url``,
+        ``commit``, ``smoke_sql``, ``postgresql``, ``releases_url``, ``max_glibc``,
         ``target``, ``runner``, ``platform`` and ``archive``.
     """
     return [
@@ -42,6 +42,7 @@ def build_matrix(config: Config) -> list[dict[str, str]]:
             "smoke_sql": extension.smoke_sql,
             "postgresql": pg_version,
             "releases_url": config.releases_url,
+            "max_glibc": config.max_glibc,
             "target": target.triple,
             "runner": target.runner,
             "platform": target.platform,

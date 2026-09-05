@@ -104,11 +104,16 @@ def test_archive_name_layout(fixture_config) -> None:
         ),
         pytest.param(
             (
-                "@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443",
+                "@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9",
                 "",
             ),
             "digest",
             id="unpinned_image",
+        ),
+        pytest.param(
+            ('max_glibc = "2.34"', 'max_glibc = "2.34.1"'),
+            "max_glibc",
+            id="bad_max_glibc",
         ),
     ],
 )
@@ -147,3 +152,13 @@ def test_duplicate_extension_names_are_rejected() -> None:
     )
     with pytest.raises(ConfigError, match="unique"):
         parse_config(duplicated)
+
+
+def test_build_base_stays_at_or_below_the_theseus_glibc_floor() -> None:
+    """The image is debian:11 (glibc 2.31) and the floor is Theseus's 2.34."""
+    config = load_config(REPO_ROOT / "extensions.toml")
+    assert config.build_image.startswith("docker.io/library/debian:11@sha256:"), (
+        "the build base must be debian:11, whose glibc 2.31 is below the 2.34 the "
+        "Theseus postgres binary requires"
+    )
+    assert config.max_glibc == "2.34", "the floor is the Theseus binary's GLIBC_2.34"

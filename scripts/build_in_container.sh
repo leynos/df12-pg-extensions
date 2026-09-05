@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compile one extension against a Theseus PostgreSQL tree and package it.
 #
-# Runs inside the pinned debian:12 container with the repository mounted at
+# Runs inside the pinned debian:11 container with the repository mounted at
 # /work. This is the only place in the estate where an extension is built
 # from source: the output is the release asset every consumer downloads.
 #
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 for var in EXT_NAME EXT_PACKAGE EXT_VERSION EXT_REPOSITORY EXT_TAG EXT_COMMIT \
-           PG_VERSION TARGET ARCHIVE THESEUS_RELEASES_URL DIST_DIR; do
+           PG_VERSION TARGET ARCHIVE THESEUS_RELEASES_URL DIST_DIR MAX_GLIBC; do
   if [ -z "${!var:-}" ]; then
     echo "build_in_container.sh: $var is required" >&2
     exit 2
@@ -23,7 +23,7 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-  build-essential ca-certificates curl git gzip tar >/dev/null
+  binutils build-essential ca-certificates curl git gzip tar >/dev/null
 
 work="$(mktemp -d)"
 pg_root="$work/postgresql"
@@ -82,11 +82,19 @@ test -f "$pkg/share/extension/$EXT_NAME.control"
 chmod 0755 "$pkg/lib/"*.so
 chmod 0644 "$pkg/share/extension/"*
 
-# Report the glibc symbol-version floor so a regression is visible in the log.
-if command -v objdump >/dev/null 2>&1; then
-  echo "glibc symbol versions referenced by $EXT_NAME.so:"
-  objdump -T "$pkg/lib/$EXT_NAME.so" | grep -o 'GLIBC_[0-9.]*' | sort -uV || true
-fi
+# --- glibc floor ------------------------------------------------------------
+# The archive must not require a newer glibc than the Theseus postgres binary
+# it loads into, or hosts that run the server would refuse the extension.
+for so in "$pkg/lib/"*.so; do
+  echo "glibc symbol versions referenced by $(basename "$so"):"
+  versions="$(objdump -T "$so" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV)"
+  echo "$versions"
+  highest="$(echo "$versions" | tail -n 1)"
+  if [ -n "$highest" ] && [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$highest" | sort -V | tail -n 1)" != "$MAX_GLIBC" ]; then
+    echo "$(basename "$so") requires GLIBC_$highest, above the permitted floor GLIBC_$MAX_GLIBC" >&2
+    exit 1
+  fi
+done
 
 # --- Package reproducibly ---------------------------------------------------
 out="/work/$DIST_DIR"

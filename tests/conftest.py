@@ -12,8 +12,8 @@ import pytest
 from pgx_config import Config, Extension, parse_config
 
 FIXTURE_IMAGE = (
-    "docker.io/library/debian:12"
-    "@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443"
+    "docker.io/library/debian:11"
+    "@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9"
 )
 
 FIXTURE_CONFIG = """
@@ -33,6 +33,7 @@ platform = "linux/arm64"
 
 [build]
 image = "FIXTURE_IMAGE"
+max_glibc = "2.34"
 
 [smoke]
 package = "pgvector"

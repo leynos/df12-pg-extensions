@@ -44,6 +44,7 @@ BUILD_ENV_FROM_MATRIX = {
     "PLATFORM": "platform",
     "ARCHIVE": "archive",
     "THESEUS_RELEASES_URL": "releases_url",
+    "MAX_GLIBC": "max_glibc",
 }
 
 
@@ -192,6 +193,35 @@ def test_release_tag_validation_rejects_other_tags(release: dict, tag: str) -> N
         step for step in steps_of(release, "prepare") if step.get("id") == "resolve"
     )
     assert "exit 1" in resolve["run"], "an invalid tag must exit non-zero"
+
+
+def test_release_refuses_to_resume_a_published_release(release: dict) -> None:
+    """A published release is immutable; only a draft of the same tag may be resumed."""
+    create = next(step for step in steps_of(release, "create-release") if "run" in step)
+    text = create["run"]
+    assert 'gh release view "$TAG" --json isDraft --jq .isDraft' in text, (
+        "create-release must inspect the draft flag"
+    )
+    assert 'if [ "$is_draft" != "true" ]; then' in text, (
+        "a published release is refused"
+    )
+    refusal = text.split('"$is_draft" != "true"')[1]
+    assert "exit 1" in refusal.split("fi")[0], "refusal must fail the job"
+
+
+def test_container_build_enforces_the_glibc_floor() -> None:
+    """Every shared object is checked against MAX_GLIBC and the build fails above it."""
+    text = (SCRIPTS / "build_in_container.sh").read_text(encoding="utf-8")
+    assert "THESEUS_RELEASES_URL DIST_DIR MAX_GLIBC; do" in text, (
+        "MAX_GLIBC is required"
+    )
+    assert "objdump -T \"$so\" | grep -o 'GLIBC_[0-9.]*'" in text, (
+        "symbol versions read"
+    )
+    assert 'above the permitted floor GLIBC_$MAX_GLIBC" >&2' in text, (
+        "violation reported"
+    )
+    assert "    exit 1\n  fi\ndone" in text, "violation fails the build"
 
 
 def test_release_matrix_is_derived_from_configuration(release: dict) -> None:
@@ -488,9 +518,9 @@ def test_container_build_packages_reproducibly() -> None:
 def test_wrapper_requires_releases_url_and_pins_the_image() -> None:
     """The wrapper refuses to run without THESEUS_RELEASES_URL and reads build.image."""
     text = (SCRIPTS / "build_extension.sh").read_text(encoding="utf-8")
-    assert "PG_VERSION TARGET PLATFORM ARCHIVE THESEUS_RELEASES_URL; do" in text, (
-        "THESEUS_RELEASES_URL must be required, not defaulted"
-    )
+    assert (
+        "PG_VERSION TARGET PLATFORM ARCHIVE THESEUS_RELEASES_URL MAX_GLIBC; do" in text
+    ), "THESEUS_RELEASES_URL and MAX_GLIBC must be required, not defaulted"
     assert "THESEUS_RELEASES_URL:-" not in text, "no hard-coded releases URL fallback"
     assert (
         'BUILD_IMAGE="$(sed -n \'s/^image = "\\(.*\\)"$/\\1/p\' '
@@ -536,6 +566,7 @@ def test_wrapper_runs_the_pinned_image_for_the_leg(tmp_path: Path) -> None:
         "PLATFORM": leg["platform"],
         "ARCHIVE": leg["archive"],
         "THESEUS_RELEASES_URL": leg["releases_url"],
+        "MAX_GLIBC": leg["max_glibc"],
         "DIST_DIR": dist_dir,
         "DOCKER": str(_fake_docker(tmp_path)),
         "FAKE_DOCKER_ARGS": str(tmp_path / "args"),

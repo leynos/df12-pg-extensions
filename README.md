@@ -115,9 +115,13 @@ environment variables are specified in
 
 `scripts/build_extension.sh` runs `scripts/build_in_container.sh` inside
 the container image pinned by digest in `extensions.toml`. The image is
-`debian:12`, the same base Theseus compiles its Linux binaries in, so the
-glibc symbol versions a shared object references never exceed what the
-PostgreSQL binaries already require. Inside the container the script:
+`debian:11` (glibc 2.31). The Theseus `postgres` binary references glibc
+symbol versions up to `GLIBC_2.34`, and an extension must never require a
+newer one than the server it loads into, or hosts that run the server (RHEL
+9 at 2.34, Ubuntu 22.04 at 2.35) would refuse the module. `max_glibc` in
+`extensions.toml` records that floor and the container build fails if any
+shared object references a symbol version above it. Inside the container the
+script:
 
 1. downloads the Theseus archive for the PostgreSQL version and target and
    checks it against the `.sha256` sidecar Theseus publishes;

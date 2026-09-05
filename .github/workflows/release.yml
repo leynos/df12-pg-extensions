@@ -58,7 +58,14 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          # A published release is immutable: consumers pin its manifest digest,
+          # and re-uploading with --clobber would change it under them. Only a
+          # draft left by an earlier failed run of this same tag may be resumed.
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$is_draft" != "true" ]; then
+              echo "release $TAG is already published; releases are immutable" >&2
+              exit 1
+            fi
             exit 0
           fi
           gh release create "$TAG" \
@@ -93,6 +100,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           ARCHIVE: ${{ matrix.archive }}
           THESEUS_RELEASES_URL: ${{ matrix.releases_url }}
+          MAX_GLIBC: ${{ matrix.max_glibc }}
         run: bash scripts/build_extension.sh
       - name: Check archive layout and sidecar
         env:
