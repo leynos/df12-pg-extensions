@@ -12,8 +12,8 @@ import pytest
 from pgx_config import Config, Extension, parse_config
 
 FIXTURE_IMAGE = (
-    "docker.io/library/debian:11"
-    "@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9"
+    "docker.io/library/almalinux:9"
+    "@sha256:3a3fa7f043b142bc8008c8b308d39b47d2c84008addcd52f9f9a7a82d2a90474"
 )
 
 FIXTURE_CONFIG = """

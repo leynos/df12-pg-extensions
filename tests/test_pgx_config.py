@@ -104,7 +104,7 @@ def test_archive_name_layout(fixture_config) -> None:
         ),
         pytest.param(
             (
-                "@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9",
+                "@sha256:3a3fa7f043b142bc8008c8b308d39b47d2c84008addcd52f9f9a7a82d2a90474",
                 "",
             ),
             "digest",
@@ -155,10 +155,10 @@ def test_duplicate_extension_names_are_rejected() -> None:
 
 
 def test_build_base_stays_at_or_below_the_theseus_glibc_floor() -> None:
-    """The image is debian:11 (glibc 2.31) and the floor is Theseus's 2.34."""
+    """The image is almalinux:9 (glibc 2.34) and the floor is Theseus's 2.34."""
     config = load_config(REPO_ROOT / "extensions.toml")
-    assert config.build_image.startswith("docker.io/library/debian:11@sha256:"), (
-        "the build base must be debian:11, whose glibc 2.31 is below the 2.34 the "
+    assert config.build_image.startswith("docker.io/library/almalinux:9@sha256:"), (
+        "the build base must be almalinux:9, whose glibc 2.34 equals the floor the "
         "Theseus postgres binary requires"
     )
     assert config.max_glibc == "2.34", "the floor is the Theseus binary's GLIBC_2.34"

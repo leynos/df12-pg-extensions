@@ -29,9 +29,10 @@ platform = "linux/arm64"
 # The Theseus postgres binary references glibc symbol versions up to
 # GLIBC_2.34, so an extension may reference nothing newer or it becomes
 # stricter than the server it loads into (RHEL 9 is at 2.34, Ubuntu 22.04 at
-# 2.35). debian:11 builds against glibc 2.31, comfortably below that floor.
-# Pinned by index digest so both platforms resolve the same image.
-image = "docker.io/library/debian:11@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9"
+# 2.35). almalinux:9 builds against glibc 2.34 exactly, and unlike debian:11
+# (2.31, archived since August 2026) its package mirrors are live. Pinned by
+# index digest so both platforms resolve the same image.
+image = "docker.io/library/almalinux:9@sha256:3a3fa7f043b142bc8008c8b308d39b47d2c84008addcd52f9f9a7a82d2a90474"
 # Highest glibc symbol version an archive may reference; the Theseus postgres
 # binary's own requirement. The container build checks every shared object
 # against it.

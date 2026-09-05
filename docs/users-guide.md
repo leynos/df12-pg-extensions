@@ -88,6 +88,6 @@ The listing shows only `lib/` and `share/extension/` entries.
 
 ## glibc floor
 
-Linux archives are built against glibc 2.31 and are checked to reference no
+Linux archives are built against glibc 2.34 and are checked to reference no
 symbol version above `GLIBC_2.34`, the floor of the Theseus `postgres`
 binary itself, so any host that runs the server can load the extension.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compile one extension against a Theseus PostgreSQL tree and package it.
 #
-# Runs inside the pinned debian:11 container with the repository mounted at
+# Runs inside the pinned almalinux:9 container with the repository mounted at
 # /work. This is the only place in the estate where an extension is built
 # from source: the output is the release asset every consumer downloads.
 #
@@ -20,10 +20,8 @@ for var in EXT_NAME EXT_PACKAGE EXT_VERSION EXT_REPOSITORY EXT_TAG EXT_COMMIT \
 done
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq --no-install-recommends \
-  binutils build-essential ca-certificates curl git gzip tar >/dev/null
+# almalinux:9 ships glibc 2.34, the same floor as the Theseus postgres binary.
+dnf install -y -q binutils ca-certificates curl-minimal gcc git gzip make tar >/dev/null
 
 work="$(mktemp -d)"
 pg_root="$work/postgresql"

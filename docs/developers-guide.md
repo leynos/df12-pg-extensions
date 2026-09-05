@@ -49,11 +49,12 @@ them come from a matrix leg; none has a hard-coded fallback.
 
 ## Container build requirements
 
-The build image is `debian:11`, pinned by index digest. The Theseus
+The build image is `almalinux:9`, pinned by index digest. The Theseus
 `postgres` binary references glibc symbol versions up to `GLIBC_2.34`; an
 extension built on a newer base could reference `GLIBC_2.36` symbols and then
 fail to load on a host (RHEL 9, Ubuntu 22.04) that runs the server fine. So
-the base must stay at or below 2.34 (debian:11 is at 2.31) and
+the base must stay at or below 2.34 (almalinux:9 is at 2.34; debian:11 at
+2.31 would also do but its package mirrors were archived in August 2026) and
 `[build].max_glibc` records the floor; `build_in_container.sh` reads every
 shared object's `GLIBC_*` versions with `objdump` and fails above it. The
 build passes `OPTFLAGS=""` (pgvector defaults to `-march=native`) and
@@ -62,7 +63,7 @@ otherwise emit bitcode into `lib/bitcode/`, which the layout rules refuse).
 Only `lib/*.so`, `<name>.control` and `<name>--*.sql` are packaged; headers
 are dropped.
 
-Updating the image digest: run `skopeo inspect --raw docker://debian:11 |
+Updating the image digest: run `skopeo inspect --raw docker://almalinux:9 |
 sha256sum` (or read `docker-content-digest` from the registry) and put the
 index digest in `[build].image`.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build one extension archive inside the pinned debian:11 container.
+# Build one extension archive inside the pinned almalinux:9 container.
 #
 # Runs on the GitHub runner. Everything that compiles happens inside the
 # container (scripts/build_in_container.sh); this wrapper only resolves the

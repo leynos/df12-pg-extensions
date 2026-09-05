@@ -115,7 +115,7 @@ environment variables are specified in
 
 `scripts/build_extension.sh` runs `scripts/build_in_container.sh` inside
 the container image pinned by digest in `extensions.toml`. The image is
-`debian:11` (glibc 2.31). The Theseus `postgres` binary references glibc
+`almalinux:9` (glibc 2.34). The Theseus `postgres` binary references glibc
 symbol versions up to `GLIBC_2.34`, and an extension must never require a
 newer one than the server it loads into, or hosts that run the server (RHEL
 9 at 2.34, Ubuntu 22.04 at 2.35) would refuse the module. `max_glibc` in
