@@ -1,0 +1,38 @@
+# Extensions built and published by df12-pg-extensions.
+#
+# Every (extension, postgresql version, target) combination listed here becomes
+# one release asset. The release workflow derives its build matrix from this
+# file, the manifest builder refuses to publish a release that is missing any
+# combination, and the workflow contract tests read the same file so the
+# workflows cannot drift from it.
+
+schema_version = 1
+
+[postgresql]
+# Theseus postgresql-binaries releases the estate pins. One archive is built
+# against each of them; the consumer hook matches on major.minor exactly.
+versions = ["16.15.0", "17.11.0", "18.6.0"]
+# Rust target triples, matching the Theseus asset names and the compile target
+# of pg-embed-setup-unpriv.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+releases_url = "https://github.com/theseus-rs/postgresql-binaries/releases/download"
+
+[build]
+# The Linux Theseus binaries are compiled in debian:12 (glibc 2.36). Building
+# extensions in the same base image keeps the glibc symbol-version floor of the
+# shared objects at or below the one the PostgreSQL binaries already require.
+# Pinned by index digest so both platforms resolve the same image.
+image = "docker.io/library/debian:12@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443"
+
+[[extensions]]
+# Name as used by CREATE EXTENSION.
+name = "vector"
+# Upstream package name, used in archive file names.
+package = "pgvector"
+version = "0.8.6"
+repository = "https://github.com/pgvector/pgvector"
+tag = "v0.8.6"
+# Commit the tag resolves to; the build refuses a checkout whose HEAD differs.
+commit = "8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c"
+# SQL that must succeed against a fresh database after CREATE EXTENSION.
+smoke_sql = "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector"

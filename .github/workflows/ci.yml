@@ -1,0 +1,79 @@
+name: CI
+
+'on':
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, format and workflow contracts
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          enable-cache: false
+      - name: Markdown lint
+        uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25
+        with:
+          globs: |
+            **/*.md
+            !**/.uv-cache/**
+            !**/.uv-tools/**
+      - name: Check formatting
+        run: make check-fmt
+      - name: Lint shell scripts
+        run: make shellcheck
+      - name: Lint Python
+        run: make ruff
+      - name: Unit tests and workflow contracts
+        run: make test
+
+  smoke-build:
+    name: Smoke build (pgvector, PostgreSQL 17, x86_64)
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Resolve the smoke leg from extensions.toml
+        id: leg
+        run: python3 scripts/matrix.py extensions.toml --select pgvector 17 x86_64-unknown-linux-gnu >> "$GITHUB_OUTPUT"
+      - name: Build extension archive in the pinned container
+        env:
+          EXT_NAME: ${{ steps.leg.outputs.name }}
+          EXT_PACKAGE: ${{ steps.leg.outputs.package }}
+          EXT_VERSION: ${{ steps.leg.outputs.version }}
+          EXT_REPOSITORY: ${{ steps.leg.outputs.repository }}
+          EXT_TAG: ${{ steps.leg.outputs.tag }}
+          EXT_COMMIT: ${{ steps.leg.outputs.commit }}
+          PG_VERSION: ${{ steps.leg.outputs.postgresql }}
+          TARGET: ${{ steps.leg.outputs.target }}
+          PLATFORM: ${{ steps.leg.outputs.platform }}
+          ARCHIVE: ${{ steps.leg.outputs.archive }}
+        run: bash scripts/build_extension.sh
+      - name: Check archive layout and sidecar
+        env:
+          ARCHIVE: ${{ steps.leg.outputs.archive }}
+        run: python3 scripts/build_manifest.py check-archive "dist/$ARCHIVE"
+      - name: Load the extension into a Theseus PostgreSQL and query it
+        env:
+          EXT_NAME: ${{ steps.leg.outputs.name }}
+          PG_VERSION: ${{ steps.leg.outputs.postgresql }}
+          TARGET: ${{ steps.leg.outputs.target }}
+          ARCHIVE_PATH: dist/${{ steps.leg.outputs.archive }}
+          SMOKE_SQL: ${{ steps.leg.outputs.smoke_sql }}
+        run: bash scripts/smoke_test.sh
