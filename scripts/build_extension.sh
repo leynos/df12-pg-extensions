@@ -7,12 +7,13 @@
 #
 # Required environment (supplied by the release matrix):
 #   EXT_NAME EXT_PACKAGE EXT_VERSION EXT_REPOSITORY EXT_TAG EXT_COMMIT
-#   PG_VERSION TARGET PLATFORM ARCHIVE
-# Optional: THESEUS_RELEASES_URL, BUILD_IMAGE, DIST_DIR (default dist).
+#   PG_VERSION TARGET PLATFORM ARCHIVE THESEUS_RELEASES_URL
+# Optional: BUILD_IMAGE (default: build.image from extensions.toml),
+#   DIST_DIR (default dist), DOCKER (default docker).
 set -euo pipefail
 
 for var in EXT_NAME EXT_PACKAGE EXT_VERSION EXT_REPOSITORY EXT_TAG EXT_COMMIT \
-           PG_VERSION TARGET PLATFORM ARCHIVE; do
+           PG_VERSION TARGET PLATFORM ARCHIVE THESEUS_RELEASES_URL; do
   if [ -z "${!var:-}" ]; then
     echo "build_extension.sh: $var is required" >&2
     exit 2
@@ -21,7 +22,6 @@ done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DIST_DIR="${DIST_DIR:-dist}"
-export THESEUS_RELEASES_URL="${THESEUS_RELEASES_URL:-https://github.com/theseus-rs/postgresql-binaries/releases/download}"
 if [ -z "${BUILD_IMAGE:-}" ]; then
   BUILD_IMAGE="$(sed -n 's/^image = "\(.*\)"$/\1/p' "$repo_root/extensions.toml")"
 fi
@@ -30,7 +30,7 @@ if [ -z "$BUILD_IMAGE" ]; then
   exit 2
 fi
 export EXT_NAME EXT_PACKAGE EXT_VERSION EXT_REPOSITORY EXT_TAG EXT_COMMIT \
-       PG_VERSION TARGET PLATFORM ARCHIVE
+       PG_VERSION TARGET PLATFORM ARCHIVE THESEUS_RELEASES_URL
 DOCKER="${DOCKER:-docker}"
 
 mkdir -p "$repo_root/$DIST_DIR"

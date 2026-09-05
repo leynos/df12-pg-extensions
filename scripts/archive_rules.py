@@ -24,7 +24,13 @@ class ArchiveError(ValueError):
 
 @dataclasses.dataclass(frozen=True)
 class ArchiveSummary:
-    """Regular files found in a valid archive, sorted, relative to the root."""
+    """Regular files found in a valid archive.
+
+    Attributes
+    ----------
+    files : tuple of str
+        Canonical paths relative to the install root, sorted.
+    """
 
     files: tuple[str, ...]
 
@@ -49,13 +55,25 @@ def _normalised(path: str) -> str | None:
 def classify_path(path: str) -> str | None:
     """Return the canonical path when ``path`` lies under an allowed prefix.
 
-    Examples:
-        >>> classify_path("./lib/vector.so")
-        'lib/vector.so'
-        >>> classify_path("lib/../bin/psql") is None
-        True
-        >>> classify_path("include/server/vector.h") is None
-        True
+    Parameters
+    ----------
+    path : str
+        A tar entry name.
+
+    Returns
+    -------
+    str or None
+        The canonical relative path, or ``None`` when the entry is not a
+        regular-file path the hook accepts.
+
+    Examples
+    --------
+    >>> classify_path("./lib/vector.so")
+    'lib/vector.so'
+    >>> classify_path("lib/../bin/psql") is None
+    True
+    >>> classify_path("include/server/vector.h") is None
+    True
     """
     canonical = _normalised(path)
     if canonical is None:
@@ -70,54 +88,90 @@ def classify_path(path: str) -> str | None:
     return None
 
 
+def _validate_directory(member: tarfile.TarInfo) -> None:
+    canonical = _normalised(member.name)
+    if canonical is None:
+        raise ArchiveError(f"directory entry has an unacceptable path: {member.name!r}")
+    inside = any(
+        (canonical + "/").startswith(prefix) or prefix.startswith(canonical + "/")
+        for prefix in ALLOWED_PREFIXES
+    )
+    if not inside:
+        raise ArchiveError(f"directory outside the allowed prefixes: {member.name!r}")
+
+
+def _validate_file(member: tarfile.TarInfo, seen: list[str]) -> str:
+    if not member.isreg():
+        raise ArchiveError(
+            f"only regular files and directories are allowed, got {member.name!r} "
+            f"(type {member.type!r})"
+        )
+    accepted = classify_path(member.name)
+    if accepted is None:
+        raise ArchiveError(f"file outside lib/ or share/extension/: {member.name!r}")
+    if accepted in seen:
+        raise ArchiveError(f"duplicate entry: {accepted!r}")
+    return accepted
+
+
+def _require_control_file(files: list[str]) -> None:
+    if not files:
+        raise ArchiveError("archive contains no files")
+    has_control = any(
+        name.startswith("share/extension/") and name.endswith(".control")
+        for name in files
+    )
+    if not has_control:
+        raise ArchiveError("archive has no share/extension/*.control file")
+
+
 def validate_members(members: Iterable[tarfile.TarInfo]) -> ArchiveSummary:
     """Validate tar members and return the regular files they contain.
 
-    Raises:
-        ArchiveError: on the first member that breaks a rule.
+    Parameters
+    ----------
+    members : iterable of tarfile.TarInfo
+        The archive's members in archive order.
+
+    Returns
+    -------
+    ArchiveSummary
+        The accepted regular files, sorted.
+
+    Raises
+    ------
+    ArchiveError
+        On the first member that breaks a rule, or when no control file is
+        present.
     """
     files: list[str] = []
     for member in members:
-        canonical = _normalised(member.name)
         if member.isdir():
-            if canonical is None:
-                raise ArchiveError(
-                    f"directory entry has an unacceptable path: {member.name!r}"
-                )
-            if not any(
-                (canonical + "/").startswith(prefix)
-                or prefix.startswith(canonical + "/")
-                for prefix in ALLOWED_PREFIXES
-            ):
-                raise ArchiveError(
-                    f"directory outside the allowed prefixes: {member.name!r}"
-                )
+            _validate_directory(member)
             continue
-        if not member.isreg():
-            raise ArchiveError(
-                f"only regular files and directories are allowed, got {member.name!r} "
-                f"(type {member.type!r})"
-            )
-        accepted = classify_path(member.name)
-        if accepted is None:
-            raise ArchiveError(
-                f"file outside lib/ or share/extension/: {member.name!r}"
-            )
-        if accepted in files:
-            raise ArchiveError(f"duplicate entry: {accepted!r}")
-        files.append(accepted)
-    if not files:
-        raise ArchiveError("archive contains no files")
-    if not any(
-        name.startswith("share/extension/") and name.endswith(".control")
-        for name in files
-    ):
-        raise ArchiveError("archive has no share/extension/*.control file")
+        files.append(_validate_file(member, files))
+    _require_control_file(files)
     return ArchiveSummary(files=tuple(sorted(files)))
 
 
 def validate_archive(path: Path) -> ArchiveSummary:
-    """Open a gzip tar at ``path`` and validate its layout."""
+    """Open a gzip tar at ``path`` and validate its layout.
+
+    Parameters
+    ----------
+    path : Path
+        The archive to inspect.
+
+    Returns
+    -------
+    ArchiveSummary
+        The accepted regular files, sorted.
+
+    Raises
+    ------
+    ArchiveError
+        When the file is not a readable gzip tar or breaks a layout rule.
+    """
     try:
         with tarfile.open(path, mode="r:gz") as archive:
             return validate_members(archive.getmembers())
@@ -126,5 +180,16 @@ def validate_archive(path: Path) -> ArchiveSummary:
 
 
 def basename_of(path: str) -> str:
-    """Return the final component of a ``/``-separated path."""
+    """Return the final component of a ``/``-separated path.
+
+    Parameters
+    ----------
+    path : str
+        A ``/``-separated path.
+
+    Returns
+    -------
+    str
+        The last component.
+    """
     return posixpath.basename(path)

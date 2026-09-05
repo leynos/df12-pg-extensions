@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from matrix import PLATFORMS, RUNNERS, build_matrix, select_leg
+from matrix import build_matrix, smoke_leg
 from pgx_config import load_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -18,75 +18,67 @@ def test_matrix_covers_every_leg_exactly_once(fixture_config) -> None:
     """The matrix is the cartesian product of extensions, versions and targets."""
     legs = build_matrix(fixture_config)
     keys = [(leg["name"], leg["postgresql"], leg["target"]) for leg in legs]
-    assert len(keys) == len(set(keys)) == 4
+    assert len(keys) == len(set(keys)) == 4, "one leg per combination"
+    by_triple = {target.triple: target for target in fixture_config.targets}
     for leg in legs:
-        assert leg["runner"] == RUNNERS[leg["target"]]
-        assert leg["platform"] == PLATFORMS[leg["target"]]
-        assert leg["archive"].endswith(f"-pg{leg['postgresql']}-{leg['target']}.tar.gz")
+        assert leg["runner"] == by_triple[leg["target"]].runner, leg["target"]
+        assert leg["platform"] == by_triple[leg["target"]].platform, leg["target"]
+        assert leg["releases_url"] == fixture_config.releases_url, "releases URL"
+        assert leg["archive"].endswith(
+            f"-pg{leg['postgresql']}-{leg['target']}.tar.gz"
+        ), "archive name"
 
 
-@pytest.mark.parametrize(
-    ("target", "runner", "platform"),
-    [
-        pytest.param(
-            "x86_64-unknown-linux-gnu", "ubuntu-24.04", "linux/amd64", id="x86_64"
-        ),
-        pytest.param(
-            "aarch64-unknown-linux-gnu", "ubuntu-24.04-arm", "linux/arm64", id="aarch64"
-        ),
-    ],
-)
-def test_every_configured_target_has_a_runner(
-    target: str, runner: str, platform: str
-) -> None:
-    """Each target in extensions.toml maps to a native runner and platform."""
+def test_checked_in_config_produces_a_matrix() -> None:
+    """Every configured target and version appears in the real matrix."""
     config = load_config(REPO_ROOT / "extensions.toml")
-    assert target in config.targets
-    assert RUNNERS[target] == runner
-    assert PLATFORMS[target] == platform
+    legs = build_matrix(config)
+    assert {leg["target"] for leg in legs} == set(config.target_triples), "targets"
+    assert {leg["postgresql"] for leg in legs} == set(config.postgresql_versions), (
+        "versions"
+    )
 
 
-def test_checked_in_config_targets_all_have_runners() -> None:
-    """No target can be added to extensions.toml without a runner mapping."""
-    config = load_config(REPO_ROOT / "extensions.toml")
-    assert set(config.targets) <= set(RUNNERS)
+def test_smoke_leg_matches_configuration(fixture_config) -> None:
+    """The smoke leg is the configured package on the configured major and target."""
+    leg = smoke_leg(fixture_config)
+    assert leg["package"] == fixture_config.smoke.package, "smoke package"
+    assert leg["postgresql"].startswith(f"{fixture_config.smoke.postgresql_major}."), (
+        "smoke major"
+    )
+    assert leg["target"] == fixture_config.smoke.target, "smoke target"
 
 
-def test_select_leg_finds_exactly_one(fixture_config) -> None:
-    """--select narrows to one leg by package, major and target."""
-    legs = build_matrix(fixture_config)
-    leg = select_leg(legs, "pgvector", "17", "x86_64-unknown-linux-gnu")
-    assert leg["postgresql"] == "17.11.0"
-    with pytest.raises(LookupError):
-        select_leg(legs, "pgvector", "15", "x86_64-unknown-linux-gnu")
+def test_smoke_leg_requires_exactly_one_match(fixture_config) -> None:
+    """Two configured releases of the same major make the smoke leg ambiguous."""
+    ambiguous = fixture_config.__class__(
+        **{**fixture_config.__dict__, "postgresql_versions": ("17.11.0", "17.12.0")}
+    )
+    with pytest.raises(LookupError, match="found 2"):
+        smoke_leg(ambiguous)
 
 
-def test_cli_json_and_select_forms() -> None:
-    """The CLI prints fromJSON-compatible JSON, and key=value lines for --select."""
+def test_cli_json_and_smoke_leg_forms() -> None:
+    """The CLI prints fromJSON-compatible JSON, and key=value lines for --smoke-leg."""
     script = REPO_ROOT / "scripts" / "matrix.py"
+    config_path = REPO_ROOT / "extensions.toml"
+    config = load_config(config_path)
     output = subprocess.run(
-        [sys.executable, str(script), str(REPO_ROOT / "extensions.toml")],
+        [sys.executable, str(script), str(config_path)],
         check=True,
         capture_output=True,
         text=True,
     ).stdout
     matrix = json.loads(output)
-    assert matrix.get("include")
+    assert matrix["include"], "matrix has legs"
     lines = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            str(REPO_ROOT / "extensions.toml"),
-            "--select",
-            "pgvector",
-            "17",
-            "x86_64-unknown-linux-gnu",
-        ],
+        [sys.executable, str(script), str(config_path), "--smoke-leg"],
         check=True,
         capture_output=True,
         text=True,
     ).stdout.splitlines()
     pairs = dict(line.split("=", 1) for line in lines)
-    assert pairs["name"] == "vector"
-    assert pairs["target"] == "x86_64-unknown-linux-gnu"
-    assert pairs["archive"].startswith("pgvector-")
+    assert pairs["package"] == config.smoke.package, "smoke package"
+    assert pairs["target"] == config.smoke.target, "smoke target"
+    assert pairs["releases_url"] == config.releases_url, "releases URL"
+    assert set(pairs) == set(matrix["include"][0]), "same keys as the matrix"

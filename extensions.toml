@@ -12,10 +12,18 @@ schema_version = 1
 # Theseus postgresql-binaries releases the estate pins. One archive is built
 # against each of them; the consumer hook matches on major.minor exactly.
 versions = ["16.15.0", "17.11.0", "18.6.0"]
-# Rust target triples, matching the Theseus asset names and the compile target
-# of pg-embed-setup-unpriv.
-targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 releases_url = "https://github.com/theseus-rs/postgresql-binaries/releases/download"
+
+# Rust target triples, matching the Theseus asset names and the compile target
+# of pg-embed-setup-unpriv. Each names the GitHub-hosted runner that builds it
+# natively and the container platform passed to `docker run`.
+[targets."x86_64-unknown-linux-gnu"]
+runner = "ubuntu-24.04"
+platform = "linux/amd64"
+
+[targets."aarch64-unknown-linux-gnu"]
+runner = "ubuntu-24.04-arm"
+platform = "linux/arm64"
 
 [build]
 # The Linux Theseus binaries are compiled in debian:12 (glibc 2.36). Building
@@ -23,6 +31,12 @@ releases_url = "https://github.com/theseus-rs/postgresql-binaries/releases/downl
 # shared objects at or below the one the PostgreSQL binaries already require.
 # Pinned by index digest so both platforms resolve the same image.
 image = "docker.io/library/debian:12@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443"
+
+[smoke]
+# The one leg a pull request builds and smoke-tests end to end.
+package = "pgvector"
+postgresql_major = 17
+target = "x86_64-unknown-linux-gnu"
 
 [[extensions]]
 # Name as used by CREATE EXTENSION.

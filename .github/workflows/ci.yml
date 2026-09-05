@@ -42,7 +42,7 @@ jobs:
         run: make test
 
   smoke-build:
-    name: Smoke build (pgvector, PostgreSQL 17, x86_64)
+    name: Smoke build (configured smoke leg)
     runs-on: ubicloud-standard-2
     timeout-minutes: 30
     steps:
@@ -51,7 +51,7 @@ jobs:
           persist-credentials: false
       - name: Resolve the smoke leg from extensions.toml
         id: leg
-        run: python3 scripts/matrix.py extensions.toml --select pgvector 17 x86_64-unknown-linux-gnu >> "$GITHUB_OUTPUT"
+        run: python3 scripts/matrix.py extensions.toml --smoke-leg >> "$GITHUB_OUTPUT"
       - name: Build extension archive in the pinned container
         env:
           EXT_NAME: ${{ steps.leg.outputs.name }}
@@ -64,6 +64,7 @@ jobs:
           TARGET: ${{ steps.leg.outputs.target }}
           PLATFORM: ${{ steps.leg.outputs.platform }}
           ARCHIVE: ${{ steps.leg.outputs.archive }}
+          THESEUS_RELEASES_URL: ${{ steps.leg.outputs.releases_url }}
         run: bash scripts/build_extension.sh
       - name: Check archive layout and sidecar
         env:
@@ -76,4 +77,5 @@ jobs:
           TARGET: ${{ steps.leg.outputs.target }}
           ARCHIVE_PATH: dist/${{ steps.leg.outputs.archive }}
           SMOKE_SQL: ${{ steps.leg.outputs.smoke_sql }}
+          THESEUS_RELEASES_URL: ${{ steps.leg.outputs.releases_url }}
         run: bash scripts/smoke_test.sh

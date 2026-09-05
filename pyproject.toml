@@ -20,10 +20,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["F", "W", "E", "I", "B", "UP", "D", "N", "SIM", "PTH", "RUF"]
-ignore = ["D203", "D213"]
 
 [tool.ruff.lint.pydocstyle]
-convention = "google"
+convention = "numpy"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

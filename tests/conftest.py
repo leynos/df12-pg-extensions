@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
-from pgx_config import Config, parse_config
+from pgx_config import Config, Extension, parse_config
 
 FIXTURE_IMAGE = (
     "docker.io/library/debian:12"
@@ -21,11 +21,23 @@ schema_version = 1
 
 [postgresql]
 versions = ["17.11.0", "18.6.0"]
-targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 releases_url = "https://github.com/theseus-rs/postgresql-binaries/releases/download"
+
+[targets."x86_64-unknown-linux-gnu"]
+runner = "ubuntu-24.04"
+platform = "linux/amd64"
+
+[targets."aarch64-unknown-linux-gnu"]
+runner = "ubuntu-24.04-arm"
+platform = "linux/arm64"
 
 [build]
 image = "FIXTURE_IMAGE"
+
+[smoke]
+package = "pgvector"
+postgresql_major = 17
+target = "x86_64-unknown-linux-gnu"
 
 [[extensions]]
 name = "vector"
@@ -75,20 +87,38 @@ def write_archive(
     return digest
 
 
+def first_leg(config: Config) -> tuple[Extension, str, str]:
+    """Return the first configured (extension, PostgreSQL version, target)."""
+    return (
+        config.extensions[0],
+        config.postgresql_versions[0],
+        config.target_triples[0],
+    )
+
+
+def last_leg(config: Config) -> tuple[Extension, str, str]:
+    """Return the last configured (extension, PostgreSQL version, target)."""
+    return (
+        config.extensions[-1],
+        config.postgresql_versions[-1],
+        config.target_triples[-1],
+    )
+
+
 @pytest.fixture
 def fixture_config() -> Config:
-    """A small validated configuration with two versions and two targets."""
+    """Return a small validated configuration with two versions and two targets."""
     return parse_config(FIXTURE_CONFIG)
 
 
 @pytest.fixture
 def full_dist(tmp_path: Path, fixture_config: Config) -> Path:
-    """A dist directory holding every archive the fixture configuration expects."""
+    """Return a dist directory holding every archive the fixture expects."""
     dist = tmp_path / "dist"
     dist.mkdir()
     extension = fixture_config.extensions[0]
     for pg_version in fixture_config.postgresql_versions:
-        for target in fixture_config.targets:
+        for target in fixture_config.target_triples:
             name = fixture_config.archive_name(extension, pg_version, target)
             write_archive(dist / name, FIXTURE_FILES.items())
     return dist

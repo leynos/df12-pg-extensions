@@ -7,18 +7,33 @@
 # CREATE EXTENSION plus the configured smoke SQL, and stops the server.
 #
 # Required environment: EXT_NAME PG_VERSION TARGET ARCHIVE_PATH SMOKE_SQL
-# Optional: THESEUS_RELEASES_URL WORK_DIR
+#   THESEUS_RELEASES_URL
+# Optional: WORK_DIR
+#
+# On any failure the trap prints the exit status, the work directory and the
+# initdb and PostgreSQL logs, so a CI failure is diagnosable from the job log.
 set -euo pipefail
 
-for var in EXT_NAME PG_VERSION TARGET ARCHIVE_PATH SMOKE_SQL; do
+for var in EXT_NAME PG_VERSION TARGET ARCHIVE_PATH SMOKE_SQL THESEUS_RELEASES_URL; do
   if [ -z "${!var:-}" ]; then
     echo "smoke_test.sh: $var is required" >&2
     exit 2
   fi
 done
-THESEUS_RELEASES_URL="${THESEUS_RELEASES_URL:-https://github.com/theseus-rs/postgresql-binaries/releases/download}"
 WORK_DIR="${WORK_DIR:-$(mktemp -d)}"
 mkdir -p "$WORK_DIR"
+
+report_failure() {
+  local status=$?
+  echo "smoke test failed with exit status $status; work directory: $WORK_DIR" >&2
+  for log in initdb.log postgres.log; do
+    if [ -f "$WORK_DIR/$log" ]; then
+      echo "--- $WORK_DIR/$log" >&2
+      cat "$WORK_DIR/$log" >&2
+    fi
+  done
+}
+trap report_failure ERR
 pg_root="$WORK_DIR/postgresql"
 data_dir="$WORK_DIR/data"
 # Unix socket paths are capped at 107 bytes, so the socket directory lives in

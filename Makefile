@@ -1,4 +1,4 @@
-.PHONY: help all test lint ruff fmt check-fmt markdownlint shellcheck matrix
+.PHONY: help all test lint ruff fmt check-fmt markdownlint shellcheck matrix smoke-leg
 
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
@@ -33,6 +33,9 @@ check-fmt: ## Verify Python formatting
 
 matrix: ## Print the release build matrix derived from extensions.toml
 	python3 scripts/matrix.py extensions.toml
+
+smoke-leg: ## Print the configured pull-request smoke leg
+	python3 scripts/matrix.py extensions.toml --smoke-leg
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \

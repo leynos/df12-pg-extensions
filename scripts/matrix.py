@@ -2,8 +2,8 @@
 
 Printed as JSON suitable for ``strategy.matrix: ${{ fromJSON(...) }}`` so the
 workflow cannot list a leg the configuration does not know about, or miss one
-it does. With ``--select PACKAGE MAJOR TARGET`` it prints exactly one leg as
-``key=value`` lines for ``$GITHUB_OUTPUT``, which the CI smoke build uses.
+it does. With ``--smoke-leg`` it prints the configured smoke leg as
+``key=value`` lines for ``$GITHUB_OUTPUT``.
 """
 
 from __future__ import annotations
@@ -14,77 +14,102 @@ from pathlib import Path
 
 from pgx_config import Config, load_config
 
-RUNNERS: dict[str, str] = {
-    "x86_64-unknown-linux-gnu": "ubuntu-24.04",
-    "aarch64-unknown-linux-gnu": "ubuntu-24.04-arm",
-}
-PLATFORMS: dict[str, str] = {
-    "x86_64-unknown-linux-gnu": "linux/amd64",
-    "aarch64-unknown-linux-gnu": "linux/arm64",
-}
-
 
 def build_matrix(config: Config) -> list[dict[str, str]]:
-    """Return one entry per (extension, postgresql version, target)."""
-    legs: list[dict[str, str]] = []
-    for extension in config.extensions:
-        for pg_version in config.postgresql_versions:
-            for target in config.targets:
-                if target not in RUNNERS:
-                    raise SystemExit(f"no runner mapping for target {target}")
-                legs.append(
-                    {
-                        "name": extension.name,
-                        "package": extension.package,
-                        "version": extension.version,
-                        "repository": extension.repository,
-                        "tag": extension.tag,
-                        "commit": extension.commit,
-                        "smoke_sql": extension.smoke_sql,
-                        "postgresql": pg_version,
-                        "target": target,
-                        "runner": RUNNERS[target],
-                        "platform": PLATFORMS[target],
-                        "archive": config.archive_name(extension, pg_version, target),
-                    }
-                )
-    return legs
+    """Return one matrix entry per (extension, PostgreSQL version, target).
 
+    Parameters
+    ----------
+    config : Config
+        The validated configuration.
 
-def select_leg(
-    legs: list[dict[str, str]], package: str, major: str, target: str
-) -> dict[str, str]:
-    """Return the single leg for ``package`` on PostgreSQL ``major`` and ``target``.
-
-    Raises:
-        LookupError: when zero or several legs match.
+    Returns
+    -------
+    list of dict
+        Entries whose keys are the environment the build scripts need:
+        ``name``, ``package``, ``version``, ``repository``, ``tag``,
+        ``commit``, ``smoke_sql``, ``postgresql``, ``releases_url``,
+        ``target``, ``runner``, ``platform`` and ``archive``.
     """
+    return [
+        {
+            "name": extension.name,
+            "package": extension.package,
+            "version": extension.version,
+            "repository": extension.repository,
+            "tag": extension.tag,
+            "commit": extension.commit,
+            "smoke_sql": extension.smoke_sql,
+            "postgresql": pg_version,
+            "releases_url": config.releases_url,
+            "target": target.triple,
+            "runner": target.runner,
+            "platform": target.platform,
+            "archive": config.archive_name(extension, pg_version, target.triple),
+        }
+        for extension in config.extensions
+        for pg_version in config.postgresql_versions
+        for target in config.targets
+    ]
+
+
+def smoke_leg(config: Config) -> dict[str, str]:
+    """Return the single matrix entry selected by ``[smoke]``.
+
+    Parameters
+    ----------
+    config : Config
+        The validated configuration.
+
+    Returns
+    -------
+    dict
+        The matching entry from :func:`build_matrix`.
+
+    Raises
+    ------
+    LookupError
+        When zero or several entries match the smoke selection.
+    """
+    smoke = config.smoke
     matches = [
         leg
-        for leg in legs
-        if leg["package"] == package
-        and leg["postgresql"].split(".")[0] == major
-        and leg["target"] == target
+        for leg in build_matrix(config)
+        if leg["package"] == smoke.package
+        and leg["postgresql"].split(".")[0] == str(smoke.postgresql_major)
+        and leg["target"] == smoke.target
     ]
     if len(matches) != 1:
         raise LookupError(
-            f"expected one leg for {package} pg{major} {target}, found {len(matches)}"
+            f"expected one leg for {smoke.package} pg{smoke.postgresql_major} "
+            f"{smoke.target}, found {len(matches)}"
         )
     return matches[0]
 
 
 def main(argv: list[str]) -> int:
-    """Print the matrix JSON, or one leg as ``key=value`` lines with ``--select``."""
-    usage = "usage: matrix.py extensions.toml [--select PACKAGE MAJOR TARGET]"
-    if len(argv) not in (2, 6) or (len(argv) == 6 and argv[2] != "--select"):
+    """Print the matrix JSON, or the smoke leg as ``key=value`` lines.
+
+    Parameters
+    ----------
+    argv : list of str
+        ``[config_path]`` or ``[config_path, "--smoke-leg"]``.
+
+    Returns
+    -------
+    int
+        Process exit status.
+    """
+    usage = "usage: matrix.py extensions.toml [--smoke-leg]"
+    if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--smoke-leg"):
         print(usage, file=sys.stderr)
         return 2
-    legs = build_matrix(load_config(Path(argv[1])))
+    config = load_config(Path(argv[1]))
     if len(argv) == 2:
-        print(json.dumps({"include": legs}, separators=(",", ":")))
+        print(json.dumps({"include": build_matrix(config)}, separators=(",", ":")))
         return 0
     try:
-        leg = select_leg(legs, argv[3], argv[4], argv[5])
+        leg = smoke_leg(config)
     except LookupError as err:
         print(f"error: {err}", file=sys.stderr)
         return 1

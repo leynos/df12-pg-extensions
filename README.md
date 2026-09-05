@@ -143,13 +143,13 @@ verified the manifest against it.
 
 1. Edit `extensions.toml`: add a `[[extensions]]` table with the upstream
    tag and the 40-hex commit it resolves to, or bump `version`, `tag` and
-   `commit` together. Add PostgreSQL versions or targets to `[postgresql]`
-   when the estate pins change; every target needs a runner mapping in
-   `scripts/matrix.py`.
+   `commit` together. Add PostgreSQL versions to `[postgresql]` and targets
+   as `[targets.<triple>]` tables (runner label and container platform)
+   when the estate pins change.
 2. Run `make all`. The workflow contracts read `extensions.toml`, so the
    matrix and the manifest expectations follow the file automatically.
-3. Open a pull request. CI builds one leg (pgvector on PostgreSQL 17,
-   x86_64) end to end and runs the smoke test on it.
+3. Open a pull request. CI builds the leg named in `[smoke]` end to end and
+   runs the smoke test on it.
 4. After the merge, push a `vMAJOR.MINOR.PATCH` tag. The release workflow
    builds every leg, publishes the assets and the manifest, audits and
    smoke-tests them, and undrafts the release.
@@ -165,24 +165,32 @@ make test        # unit tests and workflow contracts (uv, pytest)
 make lint        # shellcheck, ruff, markdownlint
 make check-fmt   # ruff format --check
 make matrix      # print the release matrix as JSON
+make smoke-leg   # print the configured pull-request smoke leg
 ```
 
-To build and smoke-test one leg locally (Docker or Podman; set
-`DOCKER=podman` for Podman), export the leg's fields under the names the
-scripts expect, then run the same three steps CI runs:
+To build and smoke-test the configured smoke leg locally (Docker or Podman;
+set `DOCKER=podman` for Podman), export the leg's fields under the names
+the scripts expect, then run the same three steps CI runs:
 
 ```bash
-python3 scripts/matrix.py extensions.toml --select pgvector 17 x86_64-unknown-linux-gnu
-export EXT_NAME=vector EXT_PACKAGE=pgvector EXT_VERSION=0.8.6
-export EXT_REPOSITORY=https://github.com/pgvector/pgvector EXT_TAG=v0.8.6
-export EXT_COMMIT=8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c
-export PG_VERSION=17.11.0 TARGET=x86_64-unknown-linux-gnu PLATFORM=linux/amd64
-export ARCHIVE=pgvector-0.8.6-pg17.11.0-x86_64-unknown-linux-gnu.tar.gz
+while IFS='=' read -r key value; do
+  case "$key" in
+    name) export EXT_NAME="$value" ;;         package) export EXT_PACKAGE="$value" ;;
+    version) export EXT_VERSION="$value" ;;   repository) export EXT_REPOSITORY="$value" ;;
+    tag) export EXT_TAG="$value" ;;           commit) export EXT_COMMIT="$value" ;;
+    postgresql) export PG_VERSION="$value" ;; releases_url) export THESEUS_RELEASES_URL="$value" ;;
+    target) export TARGET="$value" ;;         platform) export PLATFORM="$value" ;;
+    archive) export ARCHIVE="$value" ;;       smoke_sql) export SMOKE_SQL="$value" ;;
+  esac
+done < <(python3 scripts/matrix.py extensions.toml --smoke-leg)
 bash scripts/build_extension.sh
 python3 scripts/build_manifest.py check-archive "dist/$ARCHIVE"
-ARCHIVE_PATH="dist/$ARCHIVE" SMOKE_SQL="SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector" \
-  bash scripts/smoke_test.sh
+ARCHIVE_PATH="dist/$ARCHIVE" bash scripts/smoke_test.sh
 ```
+
+See [`docs/users-guide.md`](docs/users-guide.md) for consumer setup and
+[`docs/developers-guide.md`](docs/developers-guide.md) for the
+configuration model, script boundaries and workflow design.
 
 ## Licence
 

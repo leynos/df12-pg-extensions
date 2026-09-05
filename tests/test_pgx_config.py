@@ -17,8 +17,32 @@ def test_checked_in_config_is_valid() -> None:
     config = load_config(REPO_ROOT / "extensions.toml")
     assert config.extensions, "at least one extension must be configured"
     for extension in config.extensions:
-        assert re.fullmatch(r"[0-9a-f]{40}", extension.commit)
-    assert "@sha256:" in config.build_image
+        assert re.fullmatch(r"[0-9a-f]{40}", extension.commit), extension.name
+    assert "@sha256:" in config.build_image, "build image must be digest-pinned"
+    assert config.smoke.target in config.target_triples, "smoke leg names a target"
+
+
+def test_targets_keep_file_order_and_metadata(fixture_config) -> None:
+    """Targets carry their runner and platform in the order written."""
+    assert [t.triple for t in fixture_config.targets] == [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ], "targets must keep file order"
+    assert fixture_config.targets[1].runner == "ubuntu-24.04-arm", "arm runner"
+    assert fixture_config.targets[1].platform == "linux/arm64", "arm platform"
+
+
+def test_smoke_leg_is_parsed(fixture_config) -> None:
+    """The [smoke] table selects package, major and target."""
+    assert (
+        fixture_config.smoke.package,
+        fixture_config.smoke.postgresql_major,
+        fixture_config.smoke.target,
+    ) == (
+        "pgvector",
+        17,
+        "x86_64-unknown-linux-gnu",
+    ), "smoke leg fields"
 
 
 def test_archive_name_layout(fixture_config) -> None:
@@ -94,6 +118,16 @@ def test_malformed_config_is_rejected(mutation: tuple[str, str], message: str) -
     assert old in FIXTURE_CONFIG, "mutation must change the fixture"
     with pytest.raises(ConfigError, match=message):
         parse_config(FIXTURE_CONFIG.replace(old, new))
+
+
+def test_non_table_extension_entry_is_rejected() -> None:
+    """An integer where an extension table belongs is a ConfigError, not a TypeError."""
+    without_tables = FIXTURE_CONFIG[: FIXTURE_CONFIG.index("[[extensions]]")]
+    text = without_tables.replace(
+        "schema_version = 1\n", "schema_version = 1\nextensions = [1]\n", 1
+    )
+    with pytest.raises(ConfigError, match="must be a table"):
+        parse_config(text)
 
 
 @pytest.mark.parametrize(

@@ -10,21 +10,26 @@ from build_manifest import (
     MANIFEST_NAME,
     ManifestError,
     build_manifest,
+    collect_extensions,
     main,
     read_sidecar,
+    sha256_of,
     verify_manifest,
+    write_sidecar,
 )
-from conftest import FIXTURE_CONFIG, FIXTURE_FILES, write_archive
+from conftest import FIXTURE_CONFIG, FIXTURE_FILES, first_leg, last_leg, write_archive
 
 TAG = "v1.0.0"
 REPOSITORY = "leynos/df12-pg-extensions"
+GENERATED_AT = "2026-09-05T12:00:00+00:00"
 
 
 def test_build_manifest_describes_every_leg(fixture_config, full_dist: Path) -> None:
     """One artifact per (version, target) with digest, size, URL and file list."""
-    manifest = build_manifest(fixture_config, full_dist, TAG, REPOSITORY)
-    assert manifest["schema_version"] == 1
-    assert manifest["release"] == TAG
+    manifest = build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
+    assert manifest["schema_version"] == 1, "schema version"
+    assert manifest["release"] == TAG, "release tag"
+    assert manifest["generated_at"] == GENERATED_AT, "caller-supplied timestamp"
     (extension,) = manifest["extensions"]
     assert extension["name"] == "vector"
     assert extension["source"] == {
@@ -36,7 +41,7 @@ def test_build_manifest_describes_every_leg(fixture_config, full_dist: Path) -> 
     assert legs == {
         (v, t)
         for v in fixture_config.postgresql_versions
-        for t in fixture_config.targets
+        for t in fixture_config.target_triples
     }
     for artifact in extension["artifacts"]:
         assert (
@@ -52,51 +57,47 @@ def test_build_manifest_fails_closed_on_missing_leg(
     fixture_config, full_dist: Path
 ) -> None:
     """A release missing any expected archive is refused."""
-    missing = fixture_config.archive_name(
-        fixture_config.extensions[0], "18.6.0", "aarch64-unknown-linux-gnu"
-    )
+    extension, pg_version, target = last_leg(fixture_config)
+    missing = fixture_config.archive_name(extension, pg_version, target)
     (full_dist / missing).unlink()
     with pytest.raises(ManifestError, match=missing):
-        build_manifest(fixture_config, full_dist, TAG, REPOSITORY)
+        build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
 
 
 def test_build_manifest_rejects_sidecar_mismatch(
     fixture_config, full_dist: Path
 ) -> None:
     """A sidecar that does not match the archive bytes is refused."""
-    name = fixture_config.archive_name(
-        fixture_config.extensions[0], "17.11.0", "x86_64-unknown-linux-gnu"
-    )
+    extension, pg_version, target = first_leg(fixture_config)
+    name = fixture_config.archive_name(extension, pg_version, target)
     sidecar = full_dist / (name + ".sha256")
     sidecar.write_text("0" * 64 + f"  {name}\n")
     with pytest.raises(ManifestError, match="does not match"):
-        build_manifest(fixture_config, full_dist, TAG, REPOSITORY)
+        build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
 
 
 def test_build_manifest_rejects_missing_sidecar(
     fixture_config, full_dist: Path
 ) -> None:
     """Every archive needs its sidecar."""
-    name = fixture_config.archive_name(
-        fixture_config.extensions[0], "17.11.0", "x86_64-unknown-linux-gnu"
-    )
+    extension, pg_version, target = first_leg(fixture_config)
+    name = fixture_config.archive_name(extension, pg_version, target)
     (full_dist / (name + ".sha256")).unlink()
     with pytest.raises(ManifestError, match="missing checksum sidecar"):
-        build_manifest(fixture_config, full_dist, TAG, REPOSITORY)
+        build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
 
 
 def test_build_manifest_rejects_bad_layout(fixture_config, full_dist: Path) -> None:
     """An archive carrying a file outside lib/ or share/extension/ is refused."""
-    name = fixture_config.archive_name(
-        fixture_config.extensions[0], "17.11.0", "x86_64-unknown-linux-gnu"
-    )
+    extension, pg_version, target = first_leg(fixture_config)
+    name = fixture_config.archive_name(extension, pg_version, target)
     entries = [
         *FIXTURE_FILES.items(),
         ("include/server/extension/vector/vector.h", b""),
     ]
     write_archive(full_dist / name, entries)
     with pytest.raises(ManifestError, match="outside"):
-        build_manifest(fixture_config, full_dist, TAG, REPOSITORY)
+        build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
 
 
 @pytest.mark.parametrize(
@@ -145,12 +146,10 @@ def test_cli_build_then_verify_round_trip(
 
 def test_verify_detects_tampered_manifest(fixture_config, full_dist: Path) -> None:
     """Editing a digest in manifest.json after publication is caught."""
-    manifest = build_manifest(fixture_config, full_dist, TAG, REPOSITORY)
+    manifest = build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
     manifest["extensions"][0]["artifacts"][0]["sha256"] = "0" * 64
     path = full_dist / MANIFEST_NAME
     path.write_text(json.dumps(manifest))
-    from build_manifest import sha256_of, write_sidecar
-
     write_sidecar(path, sha256_of(path))
     with pytest.raises(ManifestError, match="do not match"):
         verify_manifest(fixture_config, full_dist, TAG, REPOSITORY)
@@ -186,3 +185,48 @@ def test_cli_requires_dist_for_build(capsys) -> None:
         == 1
     )
     assert "needs --dist" in capsys.readouterr().err
+
+
+def test_unexpected_archive_is_rejected(fixture_config, full_dist: Path) -> None:
+    """An archive the configuration does not expect fails both build and verify."""
+    write_archive(
+        full_dist / "pgcrypto-1.0.0-pg17.11.0-x86_64-unknown-linux-gnu.tar.gz",
+        FIXTURE_FILES.items(),
+    )
+    with pytest.raises(ManifestError, match=r"does not expect.*pgcrypto"):
+        collect_extensions(fixture_config, full_dist, TAG, REPOSITORY)
+
+
+def test_collect_extensions_is_clock_free(fixture_config, full_dist: Path) -> None:
+    """Two collections of the same directory are identical, with no timestamp inside."""
+    first = collect_extensions(fixture_config, full_dist, TAG, REPOSITORY)
+    second = collect_extensions(fixture_config, full_dist, TAG, REPOSITORY)
+    assert first == second, "collection is deterministic"
+    assert "generated_at" not in json.dumps(first), (
+        "no timestamp in the extensions array"
+    )
+
+
+def test_verify_accepts_any_generated_at(fixture_config, full_dist: Path) -> None:
+    """Verify compares the archives, not the timestamp the publisher recorded."""
+    manifest = build_manifest(
+        fixture_config, full_dist, TAG, REPOSITORY, "1999-01-01T00:00:00+00:00"
+    )
+    path = full_dist / MANIFEST_NAME
+    path.write_text(json.dumps(manifest))
+    write_sidecar(path, sha256_of(path))
+    assert verify_manifest(fixture_config, full_dist, TAG, REPOSITORY) == 4, (
+        "four artifacts"
+    )
+
+
+def test_verify_rejects_wrong_release_tag(fixture_config, full_dist: Path) -> None:
+    """A manifest published under another tag is refused."""
+    manifest = build_manifest(
+        fixture_config, full_dist, "v0.9.0", REPOSITORY, GENERATED_AT
+    )
+    path = full_dist / MANIFEST_NAME
+    path.write_text(json.dumps(manifest))
+    write_sidecar(path, sha256_of(path))
+    with pytest.raises(ManifestError, match=r"release is 'v0\.9\.0'"):
+        verify_manifest(fixture_config, full_dist, TAG, REPOSITORY)
