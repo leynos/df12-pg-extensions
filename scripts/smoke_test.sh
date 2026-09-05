@@ -48,7 +48,8 @@ test -f "$pg_root/share/extension/$EXT_NAME.control"
 port="$((20000 + RANDOM % 20000))"
 cleanup() {
   "$pg_root/bin/pg_ctl" -D "$data_dir" -m fast stop >/dev/null 2>&1 || true
-  rm -f "$socket_dir"/.s.PGSQL.* && rmdir "$socket_dir" 2>/dev/null || true
+  rm -f "$socket_dir"/.s.PGSQL.*
+  rmdir "$socket_dir" 2>/dev/null || true
 }
 trap cleanup EXIT
 "$pg_root/bin/pg_ctl" -D "$data_dir" -w -l "$WORK_DIR/postgres.log" \
