@@ -22,6 +22,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from archive_rules import ArchiveError, validate_archive
 from pgx_config import Config, ConfigError, load_config
@@ -171,7 +172,7 @@ def _reject_unexpected_archives(dist: Path, expected: set[str]) -> None:
 
 def collect_extensions(
     config: Config, dist: Path, tag: str, repository: str
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Describe every expected archive in ``dist`` without touching a clock.
 
     Parameters
@@ -239,7 +240,7 @@ def collect_extensions(
 
 def build_manifest(
     config: Config, dist: Path, tag: str, repository: str, generated_at: str
-) -> dict:
+) -> dict[str, Any]:
     """Assemble the manifest for ``tag`` from the archives in ``dist``.
 
     Parameters

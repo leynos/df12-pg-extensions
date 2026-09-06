@@ -220,8 +220,8 @@ def test_container_build_enforces_the_glibc_floor() -> None:
     assert "THESEUS_RELEASES_URL DIST_DIR MAX_GLIBC; do" in text, (
         "MAX_GLIBC is required"
     )
-    assert "objdump -T \"$so\" | grep -o 'GLIBC_[0-9.]*'" in text, (
-        "symbol versions read"
+    assert "objdump -T \"$so\" | { grep -o 'GLIBC_[0-9.]*' || true; }" in text, (
+        "symbol versions read, tolerating a library with no GLIBC imports"
     )
     assert 'above the permitted floor GLIBC_$MAX_GLIBC" >&2' in text, (
         "violation reported"
