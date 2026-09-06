@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 from matrix import build_matrix, smoke_leg
-from pgx_config import load_config
+from pgx_config import Config, load_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_matrix_covers_every_leg_exactly_once(fixture_config) -> None:
+def test_matrix_covers_every_leg_exactly_once(fixture_config: Config) -> None:
     """The matrix is the cartesian product of extensions, versions and targets."""
     legs = build_matrix(fixture_config)
     keys = [(leg["name"], leg["postgresql"], leg["target"]) for leg in legs]
@@ -39,7 +39,7 @@ def test_checked_in_config_produces_a_matrix() -> None:
     )
 
 
-def test_smoke_leg_matches_configuration(fixture_config) -> None:
+def test_smoke_leg_matches_configuration(fixture_config: Config) -> None:
     """The smoke leg is the configured package on the configured major and target."""
     leg = smoke_leg(fixture_config)
     assert leg["package"] == fixture_config.smoke.package, "smoke package"
@@ -49,7 +49,7 @@ def test_smoke_leg_matches_configuration(fixture_config) -> None:
     assert leg["target"] == fixture_config.smoke.target, "smoke target"
 
 
-def test_smoke_leg_requires_exactly_one_match(fixture_config) -> None:
+def test_smoke_leg_requires_exactly_one_match(fixture_config: Config) -> None:
     """Two configured releases of the same major make the smoke leg ambiguous."""
     ambiguous = fixture_config.__class__(
         **{**fixture_config.__dict__, "postgresql_versions": ("17.11.0", "17.12.0")}

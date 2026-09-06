@@ -153,19 +153,21 @@ class Config:
         return f"{extension.package}-{extension.version}-pg{pg_version}-{target}.tar.gz"
 
 
-def _require(table: dict, key: str, context: str) -> object:
+def _require(table: dict[str, object], key: str, context: str) -> object:
     if key not in table:
         raise ConfigError(f"{context}: missing required key '{key}'")
     return table[key]
 
 
-def _require_table(value: object, context: str) -> dict:
+def _require_table(value: object, context: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ConfigError(f"{context}: must be a table, got {type(value).__name__}")
     return value
 
 
-def _require_str(table: dict, key: str, context: str, pattern: re.Pattern) -> str:
+def _require_str(
+    table: dict[str, object], key: str, context: str, pattern: re.Pattern[str]
+) -> str:
     value = _require(table, key, context)
     if not isinstance(value, str) or not pattern.match(value):
         raise ConfigError(
@@ -174,7 +176,7 @@ def _require_str(table: dict, key: str, context: str, pattern: re.Pattern) -> st
     return value
 
 
-def _require_url(table: dict, key: str, context: str) -> str:
+def _require_url(table: dict[str, object], key: str, context: str) -> str:
     value = _require(table, key, context)
     if not isinstance(value, str) or not value.startswith("https://"):
         raise ConfigError(f"{context}: '{key}' must be an https:// URL, got {value!r}")
@@ -182,7 +184,7 @@ def _require_url(table: dict, key: str, context: str) -> str:
 
 
 def _require_list(
-    table: dict, key: str, context: str, pattern: re.Pattern
+    table: dict[str, object], key: str, context: str, pattern: re.Pattern[str]
 ) -> tuple[str, ...]:
     value = _require(table, key, context)
     if not isinstance(value, list) or not value:
@@ -330,6 +332,10 @@ def load_config(path: Path) -> Config:
     Raises
     ------
     ConfigError
-        When the file is malformed.
+        When the file cannot be read or is malformed.
     """
-    return parse_config(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as err:
+        raise ConfigError(f"cannot read {path}: {err}") from err
+    return parse_config(text)

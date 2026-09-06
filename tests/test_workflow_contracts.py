@@ -14,6 +14,7 @@ import re
 import stat
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -48,17 +49,17 @@ BUILD_ENV_FROM_MATRIX = {
 }
 
 
-def load_workflow(name: str) -> dict:
+def load_workflow(name: str) -> dict[str, Any]:
     """Parse a workflow file into a dictionary."""
     return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
 
 
-def steps_of(workflow: dict, job: str) -> list[dict]:
+def steps_of(workflow: dict[str, Any], job: str) -> list[dict[str, Any]]:
     """Return the steps of ``job``."""
     return workflow["jobs"][job]["steps"]
 
 
-def run_commands(workflow: dict) -> list[tuple[str, str]]:
+def run_commands(workflow: dict[str, Any]) -> list[tuple[str, str]]:
     """Return every (job, run command) pair in the workflow."""
     return [
         (job, step["run"])
@@ -68,7 +69,7 @@ def run_commands(workflow: dict) -> list[tuple[str, str]]:
     ]
 
 
-def step_running(workflow: dict, job: str, command: str) -> dict:
+def step_running(workflow: dict[str, Any], job: str, command: str) -> dict[str, Any]:
     """Return the single step in ``job`` whose ``run`` equals ``command``."""
     matches = [
         step
@@ -81,7 +82,7 @@ def step_running(workflow: dict, job: str, command: str) -> dict:
     return matches[0]
 
 
-def step_using(workflow: dict, job: str, action: str) -> dict:
+def step_using(workflow: dict[str, Any], job: str, action: str) -> dict[str, Any]:
     """Return the single step in ``job`` whose ``uses`` starts with ``action@``."""
     matches = [
         step
@@ -95,13 +96,13 @@ def step_using(workflow: dict, job: str, action: str) -> dict:
 
 
 @pytest.fixture(scope="module")
-def release() -> dict:
+def release() -> dict[str, Any]:
     """Return the parsed release workflow."""
     return load_workflow("release.yml")
 
 
 @pytest.fixture(scope="module")
-def ci() -> dict:
+def ci() -> dict[str, Any]:
     """Return the parsed CI workflow."""
     return load_workflow("ci.yml")
 
@@ -154,14 +155,14 @@ def test_top_level_permissions_are_read_only(name: str) -> None:
 # --- release.yml ------------------------------------------------------------
 
 
-def test_release_triggers_on_version_tags_only(release: dict) -> None:
+def test_release_triggers_on_version_tags_only(release: dict[str, Any]) -> None:
     """Releases come from tag pushes; there is no manual dispatch."""
     assert release["on"] == {"push": {"tags": ["v*"]}}, (
         "release triggers only on v* tags"
     )
 
 
-def test_release_runs_serialise_per_ref(release: dict) -> None:
+def test_release_runs_serialise_per_ref(release: dict[str, Any]) -> None:
     """One release run per tag at a time, never cancelling an in-flight audit."""
     assert release["concurrency"] == {
         "group": "${{ github.workflow }}-${{ github.ref }}",
@@ -169,7 +170,7 @@ def test_release_runs_serialise_per_ref(release: dict) -> None:
     }, "release concurrency group must serialise per ref without cancelling"
 
 
-def _tag_regex(release: dict) -> re.Pattern:
+def _tag_regex(release: dict[str, Any]) -> re.Pattern[str]:
     steps = steps_of(release, "prepare")
     resolve = next(step for step in steps if step.get("id") == "resolve")
     match = re.search(r'\[\[ "\$REF_NAME" =~ (\S+) \]\]', resolve["run"])
@@ -178,7 +179,9 @@ def _tag_regex(release: dict) -> re.Pattern:
 
 
 @pytest.mark.parametrize("tag", ["v1.0.0", "v0.0.1", "v12.34.56"])
-def test_release_tag_validation_accepts_semver_tags(release: dict, tag: str) -> None:
+def test_release_tag_validation_accepts_semver_tags(
+    release: dict[str, Any], tag: str
+) -> None:
     """The tag regex in the resolve step accepts vMAJOR.MINOR.PATCH."""
     assert _tag_regex(release).search(tag), f"{tag} must be accepted"
 
@@ -186,7 +189,9 @@ def test_release_tag_validation_accepts_semver_tags(release: dict, tag: str) -> 
 @pytest.mark.parametrize(
     "tag", ["1.0.0", "v1.0", "v1.0.0-rc1", "v1.0.0.0", "release-1", "v01.0.0x"]
 )
-def test_release_tag_validation_rejects_other_tags(release: dict, tag: str) -> None:
+def test_release_tag_validation_rejects_other_tags(
+    release: dict[str, Any], tag: str
+) -> None:
     """Anything that is not vMAJOR.MINOR.PATCH stops the release."""
     assert not _tag_regex(release).search(tag), f"{tag} must be rejected"
     resolve = next(
@@ -195,7 +200,7 @@ def test_release_tag_validation_rejects_other_tags(release: dict, tag: str) -> N
     assert "exit 1" in resolve["run"], "an invalid tag must exit non-zero"
 
 
-def test_release_refuses_to_resume_a_published_release(release: dict) -> None:
+def test_release_refuses_to_resume_a_published_release(release: dict[str, Any]) -> None:
     """A published release is immutable; only a draft of the same tag may be resumed."""
     create = next(step for step in steps_of(release, "create-release") if "run" in step)
     text = create["run"]
@@ -224,7 +229,7 @@ def test_container_build_enforces_the_glibc_floor() -> None:
     assert "    exit 1\n  fi\ndone" in text, "violation fails the build"
 
 
-def test_release_matrix_is_derived_from_configuration(release: dict) -> None:
+def test_release_matrix_is_derived_from_configuration(release: dict[str, Any]) -> None:
     """The prepare job computes the matrix and both fan-out jobs consume it."""
     step_running(
         release,
@@ -250,7 +255,7 @@ def test_release_matrix_is_derived_from_configuration(release: dict) -> None:
 
 
 def test_release_build_leg_uses_container_script_with_matrix_inputs(
-    release: dict,
+    release: dict[str, Any],
 ) -> None:
     """The build step runs the wrapper with every matrix field it needs."""
     step = step_running(release, "build-assets", "bash scripts/build_extension.sh")
@@ -261,7 +266,7 @@ def test_release_build_leg_uses_container_script_with_matrix_inputs(
 
 
 def test_release_build_leg_checks_layout_then_uploads_archive_and_sidecar(
-    release: dict,
+    release: dict[str, Any],
 ) -> None:
     """Each leg validates its archive and uploads both the archive and its sidecar."""
     runs = [step.get("run", "").strip() for step in steps_of(release, "build-assets")]
@@ -277,7 +282,9 @@ def test_release_build_leg_checks_layout_then_uploads_archive_and_sidecar(
     )
 
 
-def test_release_manifest_is_built_from_published_archives(release: dict) -> None:
+def test_release_manifest_is_built_from_published_archives(
+    release: dict[str, Any],
+) -> None:
     """The manifest job re-downloads the archives, builds, and uploads manifest."""
     runs = [step.get("run", "") for step in steps_of(release, "manifest")]
     assert any(
@@ -310,7 +317,7 @@ def test_release_manifest_is_built_from_published_archives(release: dict) -> Non
     )
 
 
-def test_release_audit_verifies_fresh_downloads(release: dict) -> None:
+def test_release_audit_verifies_fresh_downloads(release: dict[str, Any]) -> None:
     """The audit job re-downloads every asset and runs verify against it."""
     runs = [step.get("run", "") for step in steps_of(release, "audit")]
     assert any('gh release download "$TAG" --dir audit-dist' in run for run in runs), (
@@ -327,7 +334,9 @@ def test_release_audit_verifies_fresh_downloads(release: dict) -> None:
     assert "permissions" not in release["jobs"]["audit"], "audit is read-only"
 
 
-def test_release_smoke_verifies_sidecar_and_loads_extension(release: dict) -> None:
+def test_release_smoke_verifies_sidecar_and_loads_extension(
+    release: dict[str, Any],
+) -> None:
     """Every leg checks its sidecar, then loads the archive into PostgreSQL."""
     runs = [step.get("run", "") for step in steps_of(release, "smoke")]
     assert any(
@@ -344,7 +353,7 @@ def test_release_smoke_verifies_sidecar_and_loads_extension(release: dict) -> No
     }, "smoke step env must come from the matrix"
 
 
-def test_release_publishes_only_after_audit_and_smoke(release: dict) -> None:
+def test_release_publishes_only_after_audit_and_smoke(release: dict[str, Any]) -> None:
     """Undrafting waits for the audit and every smoke leg."""
     publish = release["jobs"]["publish"]
     assert set(publish["needs"]) == {"prepare", "audit", "smoke"}, (
@@ -354,7 +363,9 @@ def test_release_publishes_only_after_audit_and_smoke(release: dict) -> None:
     assert publish["permissions"] == {"contents": "write"}, "publish edits the release"
 
 
-def test_release_write_permission_only_where_gh_mutates(release: dict) -> None:
+def test_release_write_permission_only_where_gh_mutates(
+    release: dict[str, Any],
+) -> None:
     """Only jobs that create, upload or edit the release get contents: write."""
     for job, spec in release["jobs"].items():
         mutates = any(
@@ -369,7 +380,7 @@ def test_release_write_permission_only_where_gh_mutates(release: dict) -> None:
 # --- ci.yml -----------------------------------------------------------------
 
 
-def test_ci_triggers(ci: dict) -> None:
+def test_ci_triggers(ci: dict[str, Any]) -> None:
     """CI runs on pull requests and can be dispatched for warm runs."""
     assert ci["on"]["pull_request"] == {
         "types": ["opened", "synchronize", "reopened"]
@@ -377,7 +388,7 @@ def test_ci_triggers(ci: dict) -> None:
     assert "workflow_dispatch" in ci["on"], "CI must be dispatchable"
 
 
-def test_ci_jobs_run_on_ubicloud_standard_2(ci: dict) -> None:
+def test_ci_jobs_run_on_ubicloud_standard_2(ci: dict[str, Any]) -> None:
     """Developer-blocking Linux jobs run on the exact ubicloud-standard-2 label."""
     for job, spec in ci["jobs"].items():
         assert spec["runs-on"] == "ubicloud-standard-2", (
@@ -385,7 +396,7 @@ def test_ci_jobs_run_on_ubicloud_standard_2(ci: dict) -> None:
         )
 
 
-def test_ci_checks_job_checks_out_and_lints_markdown(ci: dict) -> None:
+def test_ci_checks_job_checks_out_and_lints_markdown(ci: dict[str, Any]) -> None:
     """The checks job checks out the tree and runs the pinned markdownlint action."""
     step_using(ci, "checks", "actions/checkout")
     lint = step_using(ci, "checks", "DavidAnson/markdownlint-cli2-action")
@@ -394,14 +405,14 @@ def test_ci_checks_job_checks_out_and_lints_markdown(ci: dict) -> None:
     )
 
 
-def test_ci_checks_job_runs_every_gate(ci: dict) -> None:
+def test_ci_checks_job_runs_every_gate(ci: dict[str, Any]) -> None:
     """The checks job runs the same Make targets a contributor runs locally."""
     for command in ("make check-fmt", "make shellcheck", "make ruff", "make test"):
         step_running(ci, "checks", command)
 
 
 def test_ci_smoke_build_exercises_the_full_pipeline_for_the_configured_leg(
-    ci: dict,
+    ci: dict[str, Any],
 ) -> None:
     """The PR smoke build resolves the configured leg, then builds and smokes it."""
     step_running(

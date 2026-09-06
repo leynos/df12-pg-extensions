@@ -170,13 +170,16 @@ def validate_archive(path: Path) -> ArchiveSummary:
     Raises
     ------
     ArchiveError
-        When the file is not a readable gzip tar or breaks a layout rule.
+        When the file cannot be opened, is not a readable gzip tar, or breaks a
+        layout rule.
     """
     try:
         with tarfile.open(path, mode="r:gz") as archive:
             return validate_members(archive.getmembers())
     except tarfile.TarError as err:
         raise ArchiveError(f"{path.name}: not a readable gzip tar: {err}") from err
+    except OSError as err:
+        raise ArchiveError(f"{path.name}: cannot be opened: {err}") from err
 
 
 def basename_of(path: str) -> str:

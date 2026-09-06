@@ -46,11 +46,19 @@ def sha256_of(path: Path) -> str:
     -------
     str
         Lower-case hex digest.
+
+    Raises
+    ------
+    ManifestError
+        When the file cannot be read.
     """
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+    except OSError as err:
+        raise ManifestError(f"{path.name}: cannot be hashed: {err}") from err
     return digest.hexdigest()
 
 
@@ -76,7 +84,10 @@ def read_sidecar(path: Path) -> str:
     sidecar = path.with_name(path.name + ".sha256")
     if not sidecar.is_file():
         raise ManifestError(f"missing checksum sidecar: {sidecar.name}")
-    line = sidecar.read_text(encoding="utf-8").strip()
+    try:
+        line = sidecar.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as err:
+        raise ManifestError(f"{sidecar.name}: cannot be read: {err}") from err
     parts = line.split()
     if len(parts) != 2 or parts[1].lstrip("*") != path.name:
         raise ManifestError(
@@ -97,10 +108,17 @@ def write_sidecar(path: Path, digest: str) -> None:
         The file the sidecar describes.
     digest : str
         Its lower-case hex SHA-256.
+
+    Raises
+    ------
+    ManifestError
+        When the sidecar cannot be written.
     """
-    path.with_name(path.name + ".sha256").write_text(
-        f"{digest}  {path.name}\n", encoding="utf-8"
-    )
+    sidecar = path.with_name(path.name + ".sha256")
+    try:
+        sidecar.write_text(f"{digest}  {path.name}\n", encoding="utf-8")
+    except OSError as err:
+        raise ManifestError(f"{sidecar.name}: cannot be written: {err}") from err
 
 
 def describe_archive(path: Path) -> tuple[str, int, tuple[str, ...]]:
@@ -131,11 +149,18 @@ def describe_archive(path: Path) -> tuple[str, int, tuple[str, ...]]:
         summary = validate_archive(path)
     except ArchiveError as err:
         raise ManifestError(f"{path.name}: {err}") from err
-    return digest, path.stat().st_size, summary.files
+    try:
+        size = path.stat().st_size
+    except OSError as err:
+        raise ManifestError(f"{path.name}: cannot be inspected: {err}") from err
+    return digest, size, summary.files
 
 
 def _reject_unexpected_archives(dist: Path, expected: set[str]) -> None:
-    present = {path.name for path in dist.glob("*.tar.gz")}
+    try:
+        present = {path.name for path in dist.glob("*.tar.gz")}
+    except OSError as err:
+        raise ManifestError(f"cannot list {dist}: {err}") from err
     unexpected = sorted(present - expected)
     if unexpected:
         raise ManifestError(
@@ -280,7 +305,12 @@ def verify_manifest(config: Config, dist: Path, tag: str, repository: str) -> in
     recorded = read_sidecar(manifest_path)
     if recorded != sha256_of(manifest_path):
         raise ManifestError(f"{MANIFEST_NAME}: sidecar digest does not match contents")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
+        raise ManifestError(f"{MANIFEST_NAME}: cannot be read as JSON: {err}") from err
+    if not isinstance(manifest, dict):
+        raise ManifestError(f"{MANIFEST_NAME}: top level must be an object")
     expected = collect_extensions(config, dist, tag, repository)
     if manifest.get("schema_version") != SCHEMA_VERSION:
         raise ManifestError(
@@ -327,7 +357,10 @@ def _run(args: argparse.Namespace, config: Config) -> None:
             config, args.dist, args.tag, args.repository, generated_at
         )
         path = args.dist / MANIFEST_NAME
-        path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        try:
+            path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        except OSError as err:
+            raise ManifestError(f"{MANIFEST_NAME}: cannot be written: {err}") from err
         write_sidecar(path, sha256_of(path))
         count = sum(len(ext["artifacts"]) for ext in manifest["extensions"])
         print(f"wrote {path} describing {count} artifacts")

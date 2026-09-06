@@ -41,11 +41,16 @@ scripts and tests never fall back to a default for a missing key.
 | `scripts/smoke_test.sh` | runner | Installs an archive into a fresh Theseus tree and runs `CREATE EXTENSION` plus `smoke_sql` |
 | `scripts/build_manifest.py` | runner | `build`, `verify` and `check-archive`; `collect_extensions` is clock-free, the timestamp is injected by the `build` command |
 
-Environment contract between the wrapper and the container script:
-`EXT_NAME`, `EXT_PACKAGE`, `EXT_VERSION`, `EXT_REPOSITORY`, `EXT_TAG`,
-`EXT_COMMIT`, `PG_VERSION`, `TARGET`, `PLATFORM`, `ARCHIVE`,
-`THESEUS_RELEASES_URL`, plus `DIST_DIR` and `SOURCE_DATE_EPOCH`. All of
-them come from a matrix leg; none has a hard-coded fallback.
+Environment contract. Required by `build_extension.sh` and supplied by a
+matrix leg (or the `--smoke-leg` output) with no fallback: `EXT_NAME`,
+`EXT_PACKAGE`, `EXT_VERSION`, `EXT_REPOSITORY`, `EXT_TAG`, `EXT_COMMIT`,
+`PG_VERSION`, `TARGET`, `PLATFORM`, `ARCHIVE`, `THESEUS_RELEASES_URL` and
+`MAX_GLIBC`. Defaulted by the wrapper when unset: `BUILD_IMAGE` (read from
+`[build].image` in `extensions.toml`), `DIST_DIR` (`dist`), `DOCKER`
+(`docker`; set `podman` locally) and `SOURCE_DATE_EPOCH` (`0`, for
+reproducible tar mtimes). The wrapper exports the required set plus
+`DIST_DIR`, `MAX_GLIBC`, `THESEUS_RELEASES_URL` and `SOURCE_DATE_EPOCH` into
+the container, where `build_in_container.sh` requires all of them again.
 
 ## Container build requirements
 
@@ -54,7 +59,7 @@ The build image is `almalinux:9`, pinned by index digest. The Theseus
 extension built on a newer base could reference `GLIBC_2.36` symbols and then
 fail to load on a host (RHEL 9, Ubuntu 22.04) that runs the server fine. So
 the base must stay at or below 2.34 (almalinux:9 is at 2.34; debian:11 at
-2.31 would also do but its package mirrors were archived in August 2026) and
+2.31 would also do, but its package mirrors were archived in August 2026) and
 `[build].max_glibc` records the floor; `build_in_container.sh` reads every
 shared object's `GLIBC_*` versions with `objdump` and fails above it. The
 build passes `OPTFLAGS=""` (pgvector defaults to `-march=native`) and
@@ -97,7 +102,7 @@ credentials, and no runner step installs a tool or builds from source.
 - `tests/test_workflow_contracts.py`: the workflow and script contracts.
   Each matches a `run:` command, a `uses:` pin, a runner label or a script
   token, and one test runs `scripts/build_extension.sh` against a fake
-  `docker` to prove the container invocation. When you add a contract,
+  `docker` to prove the container invocation. When adding a contract,
   mutate the protected line once and confirm the test fails.
 
 ## Local prerequisites

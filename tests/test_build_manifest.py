@@ -18,13 +18,16 @@ from build_manifest import (
     write_sidecar,
 )
 from conftest import FIXTURE_CONFIG, FIXTURE_FILES, first_leg, last_leg, write_archive
+from pgx_config import Config
 
 TAG = "v1.0.0"
 REPOSITORY = "leynos/df12-pg-extensions"
 GENERATED_AT = "2026-09-05T12:00:00+00:00"
 
 
-def test_build_manifest_describes_every_leg(fixture_config, full_dist: Path) -> None:
+def test_build_manifest_describes_every_leg(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """One artifact per (version, target) with digest, size, URL and file list."""
     manifest = build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
     assert manifest["schema_version"] == 1, "schema version"
@@ -87,7 +90,9 @@ def test_build_manifest_rejects_missing_sidecar(
         build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
 
 
-def test_build_manifest_rejects_bad_layout(fixture_config, full_dist: Path) -> None:
+def test_build_manifest_rejects_bad_layout(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """An archive carrying a file outside lib/ or share/extension/ is refused."""
     extension, pg_version, target = first_leg(fixture_config)
     name = fixture_config.archive_name(extension, pg_version, target)
@@ -144,7 +149,9 @@ def test_cli_build_then_verify_round_trip(
     assert "wrote" in out and "verified" in out
 
 
-def test_verify_detects_tampered_manifest(fixture_config, full_dist: Path) -> None:
+def test_verify_detects_tampered_manifest(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """Editing a digest in manifest.json after publication is caught."""
     manifest = build_manifest(fixture_config, full_dist, TAG, REPOSITORY, GENERATED_AT)
     manifest["extensions"][0]["artifacts"][0]["sha256"] = "0" * 64
@@ -187,7 +194,9 @@ def test_cli_requires_dist_for_build(capsys) -> None:
     assert "needs --dist" in capsys.readouterr().err
 
 
-def test_unexpected_archive_is_rejected(fixture_config, full_dist: Path) -> None:
+def test_unexpected_archive_is_rejected(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """An archive the configuration does not expect fails both build and verify."""
     write_archive(
         full_dist / "pgcrypto-1.0.0-pg17.11.0-x86_64-unknown-linux-gnu.tar.gz",
@@ -197,7 +206,9 @@ def test_unexpected_archive_is_rejected(fixture_config, full_dist: Path) -> None
         collect_extensions(fixture_config, full_dist, TAG, REPOSITORY)
 
 
-def test_collect_extensions_is_clock_free(fixture_config, full_dist: Path) -> None:
+def test_collect_extensions_is_clock_free(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """Two collections of the same directory are identical, with no timestamp inside."""
     first = collect_extensions(fixture_config, full_dist, TAG, REPOSITORY)
     second = collect_extensions(fixture_config, full_dist, TAG, REPOSITORY)
@@ -207,7 +218,9 @@ def test_collect_extensions_is_clock_free(fixture_config, full_dist: Path) -> No
     )
 
 
-def test_verify_accepts_any_generated_at(fixture_config, full_dist: Path) -> None:
+def test_verify_accepts_any_generated_at(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """Verify compares the archives, not the timestamp the publisher recorded."""
     manifest = build_manifest(
         fixture_config, full_dist, TAG, REPOSITORY, "1999-01-01T00:00:00+00:00"
@@ -220,7 +233,9 @@ def test_verify_accepts_any_generated_at(fixture_config, full_dist: Path) -> Non
     )
 
 
-def test_verify_rejects_wrong_release_tag(fixture_config, full_dist: Path) -> None:
+def test_verify_rejects_wrong_release_tag(
+    fixture_config: Config, full_dist: Path
+) -> None:
     """A manifest published under another tag is refused."""
     manifest = build_manifest(
         fixture_config, full_dist, "v0.9.0", REPOSITORY, GENERATED_AT

@@ -85,7 +85,8 @@ chmod 0644 "$pkg/share/extension/"*
 # it loads into, or hosts that run the server would refuse the extension.
 for so in "$pkg/lib/"*.so; do
   echo "glibc symbol versions referenced by $(basename "$so"):"
-  versions="$(objdump -T "$so" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV)"
+  # grep exits 1 for a library with no GLIBC imports; that is a valid (empty) result.
+  versions="$(objdump -T "$so" | { grep -o 'GLIBC_[0-9.]*' || true; } | sed 's/GLIBC_//' | sort -uV)"
   echo "$versions"
   highest="$(echo "$versions" | tail -n 1)"
   if [ -n "$highest" ] && [ "$(printf '%s\n%s\n' "$MAX_GLIBC" "$highest" | sort -V | tail -n 1)" != "$MAX_GLIBC" ]; then

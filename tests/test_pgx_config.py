@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from conftest import FIXTURE_CONFIG
-from pgx_config import ConfigError, load_config, parse_config
+from pgx_config import Config, ConfigError, load_config, parse_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,7 +22,7 @@ def test_checked_in_config_is_valid() -> None:
     assert config.smoke.target in config.target_triples, "smoke leg names a target"
 
 
-def test_targets_keep_file_order_and_metadata(fixture_config) -> None:
+def test_targets_keep_file_order_and_metadata(fixture_config: Config) -> None:
     """Targets carry their runner and platform in the order written."""
     assert [t.triple for t in fixture_config.targets] == [
         "x86_64-unknown-linux-gnu",
@@ -32,7 +32,7 @@ def test_targets_keep_file_order_and_metadata(fixture_config) -> None:
     assert fixture_config.targets[1].platform == "linux/arm64", "arm platform"
 
 
-def test_smoke_leg_is_parsed(fixture_config) -> None:
+def test_smoke_leg_is_parsed(fixture_config: Config) -> None:
     """The [smoke] table selects package, major and target."""
     assert (
         fixture_config.smoke.package,
@@ -45,7 +45,7 @@ def test_smoke_leg_is_parsed(fixture_config) -> None:
     ), "smoke leg fields"
 
 
-def test_archive_name_layout(fixture_config) -> None:
+def test_archive_name_layout(fixture_config: Config) -> None:
     """Archive names carry package, version, PostgreSQL release and target."""
     extension = fixture_config.extensions[0]
     assert (
