@@ -1,0 +1,223 @@
+name: Release
+
+'on':
+  push:
+    tags:
+      - 'v*'
+
+# One run per tag at a time: a second run for the same ref would re-upload
+# with --clobber after the first has audited, so it waits instead.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Resolve release tag and build matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Resolve tag
+        id: resolve
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match vMAJOR.MINOR.PATCH: $REF_NAME" >&2
+            exit 1
+          fi
+          echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+      - name: Derive build matrix from extensions.toml
+        id: matrix
+        run: |
+          set -euo pipefail
+          matrix="$(python3 scripts/matrix.py extensions.toml)"
+          echo "$matrix" | python3 -m json.tool >/dev/null
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create draft release
+    needs: prepare
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release when missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # A published release is immutable: consumers pin its manifest digest,
+          # and re-uploading with --clobber would change it under them. Only a
+          # draft left by an earlier failed run of this same tag may be resumed.
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$is_draft" != "true" ]; then
+              echo "release $TAG is already published; releases are immutable" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --draft \
+            --generate-notes \
+            --title "$TAG" \
+            --verify-tag
+
+  build-assets:
+    name: Build ${{ matrix.archive }}
+    needs: [prepare, create-release]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Build extension archive in the pinned container
+        env:
+          EXT_NAME: ${{ matrix.name }}
+          EXT_PACKAGE: ${{ matrix.package }}
+          EXT_VERSION: ${{ matrix.version }}
+          EXT_REPOSITORY: ${{ matrix.repository }}
+          EXT_TAG: ${{ matrix.tag }}
+          EXT_COMMIT: ${{ matrix.commit }}
+          PG_VERSION: ${{ matrix.postgresql }}
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCHIVE: ${{ matrix.archive }}
+          THESEUS_RELEASES_URL: ${{ matrix.releases_url }}
+          MAX_GLIBC: ${{ matrix.max_glibc }}
+        run: bash scripts/build_extension.sh
+      - name: Check archive layout and sidecar
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+        run: python3 scripts/build_manifest.py check-archive "dist/$ARCHIVE"
+      - name: Upload archive and checksum sidecar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: gh release upload "$TAG" "dist/$ARCHIVE" "dist/$ARCHIVE.sha256" --clobber
+
+  manifest:
+    name: Build and upload manifest
+    needs: [prepare, build-assets]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Download every draft archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-dist
+          gh release download "$TAG" --dir release-dist --pattern '*.tar.gz'
+          gh release download "$TAG" --dir release-dist --pattern '*.tar.gz.sha256'
+      - name: Build manifest from the published archives
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: >-
+          python3 scripts/build_manifest.py build
+          --dist release-dist --tag "$TAG" --repository "$REPOSITORY"
+      - name: Upload manifest and checksum sidecar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: >-
+          gh release upload "$TAG"
+          release-dist/manifest.json release-dist/manifest.json.sha256 --clobber
+
+  audit:
+    name: Audit draft assets against the manifest
+    needs: [prepare, manifest]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Download every draft asset afresh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p audit-dist
+          gh release download "$TAG" --dir audit-dist
+      - name: Verify manifest, sidecars and archive layout
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: >-
+          python3 scripts/build_manifest.py verify
+          --dist audit-dist --tag "$TAG" --repository "$REPOSITORY"
+
+  smoke:
+    name: Smoke ${{ matrix.archive }}
+    needs: [prepare, manifest]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Download this leg's archive and sidecar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-dist
+          gh release download "$TAG" --dir smoke-dist --pattern "$ARCHIVE"
+          gh release download "$TAG" --dir smoke-dist --pattern "$ARCHIVE.sha256"
+          (cd smoke-dist && sha256sum -c "$ARCHIVE.sha256")
+      - name: Load the extension into a Theseus PostgreSQL and query it
+        env:
+          EXT_NAME: ${{ matrix.name }}
+          PG_VERSION: ${{ matrix.postgresql }}
+          TARGET: ${{ matrix.target }}
+          ARCHIVE_PATH: smoke-dist/${{ matrix.archive }}
+          SMOKE_SQL: ${{ matrix.smoke_sql }}
+          THESEUS_RELEASES_URL: ${{ matrix.releases_url }}
+        run: bash scripts/smoke_test.sh
+
+  publish:
+    name: Publish release
+    needs: [prepare, audit, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false
