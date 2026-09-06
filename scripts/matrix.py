@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from pgx_config import Config, load_config
+from pgx_config import Config, ConfigError, load_config
 
 
 def build_matrix(config: Config) -> list[dict[str, str]]:
@@ -99,13 +99,19 @@ def main(argv: list[str]) -> int:
     Returns
     -------
     int
-        Process exit status.
+        Process exit status: ``0`` on success, ``1`` when the configuration
+        cannot be loaded or the smoke leg cannot be emitted, ``2`` on usage
+        errors.
     """
     usage = "usage: matrix.py extensions.toml [--smoke-leg]"
     if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--smoke-leg"):
         print(usage, file=sys.stderr)
         return 2
-    config = load_config(Path(argv[1]))
+    try:
+        config = load_config(Path(argv[1]))
+    except ConfigError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
     if len(argv) == 2:
         print(json.dumps({"include": build_matrix(config)}, separators=(",", ":")))
         return 0
@@ -114,12 +120,14 @@ def main(argv: list[str]) -> int:
     except LookupError as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
+    multi_line = [key for key, value in leg.items() if "\n" in value]
+    if multi_line:
+        print(
+            f"error: {', '.join(multi_line)} must be a single line for GITHUB_OUTPUT",
+            file=sys.stderr,
+        )
+        return 1
     for key, value in leg.items():
-        if "\n" in value:
-            print(
-                f"error: {key} must be a single line for GITHUB_OUTPUT", file=sys.stderr
-            )
-            return 1
         print(f"{key}={value}")
     return 0
 

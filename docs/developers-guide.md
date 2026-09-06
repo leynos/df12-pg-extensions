@@ -107,5 +107,9 @@ credentials, and no runner step installs a tool or builds from source.
 
 ## Local prerequisites
 
-`uv` (for ruff and pytest), `shellcheck`, `markdownlint-cli2`, and Docker or
-Podman for a local build (`DOCKER=podman`). `make all` runs every gate.
+`python3` at 3.12 or newer for the `matrix`, `manifest` and smoke commands
+(`pyproject.toml` declares `requires-python = ">=3.12"`; the scripts use
+`tomllib` and only the standard library), `uv` for ruff and pytest (`make
+test` pins the interpreter to 3.13 through `uv run --python 3.13`),
+`shellcheck`, `markdownlint-cli2`, and Docker or Podman for a local build
+(`DOCKER=podman`). `make all` runs every gate.

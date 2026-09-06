@@ -10,7 +10,6 @@ the publisher must never ship an archive the hook would refuse.
 from __future__ import annotations
 
 import dataclasses
-import posixpath
 import tarfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -180,19 +179,3 @@ def validate_archive(path: Path) -> ArchiveSummary:
         raise ArchiveError(f"{path.name}: not a readable gzip tar: {err}") from err
     except OSError as err:
         raise ArchiveError(f"{path.name}: cannot be opened: {err}") from err
-
-
-def basename_of(path: str) -> str:
-    """Return the final component of a ``/``-separated path.
-
-    Parameters
-    ----------
-    path : str
-        A ``/``-separated path.
-
-    Returns
-    -------
-    str
-        The last component.
-    """
-    return posixpath.basename(path)
