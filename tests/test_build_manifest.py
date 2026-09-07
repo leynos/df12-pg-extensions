@@ -124,7 +124,10 @@ def test_read_sidecar_rejects_malformed(tmp_path: Path, line: str) -> None:
 
 
 def test_cli_build_then_verify_round_trip(
-    fixture_config, full_dist: Path, tmp_path: Path, capsys
+    fixture_config,
+    full_dist: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The CLI writes manifest.json plus sidecar and verify accepts them."""
     config_path = tmp_path / "extensions.toml"
@@ -162,7 +165,7 @@ def test_verify_detects_tampered_manifest(
         verify_manifest(fixture_config, full_dist, TAG, REPOSITORY)
 
 
-def test_cli_check_archive(full_dist: Path, capsys) -> None:
+def test_cli_check_archive(full_dist: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """check-archive validates individual archives without the full set."""
     archive = next(full_dist.glob("*.tar.gz"))
     assert (
@@ -180,7 +183,7 @@ def test_cli_check_archive(full_dist: Path, capsys) -> None:
 
 
 def test_cli_check_archive_ignores_the_configuration(
-    full_dist: Path, tmp_path: Path, capsys
+    full_dist: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """check-archive reports on the named archives without reading the config.
 
@@ -196,7 +199,7 @@ def test_cli_check_archive_ignores_the_configuration(
         assert archive.name in capsys.readouterr().out
 
 
-def test_cli_requires_dist_for_build(capsys) -> None:
+def test_cli_requires_dist_for_build(capsys: pytest.CaptureFixture[str]) -> None:
     """Build and verify need --dist, --tag and --repository."""
     assert (
         main(

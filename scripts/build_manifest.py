@@ -343,13 +343,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run(args: argparse.Namespace) -> None:
-    """Dispatch one command.
-
-    ``check-archive`` is a query about the archives named on the command line
-    and says nothing about the release, so it does not read ``extensions.toml``
-    at all. Loading the configuration for every command made an independent
-    archive query fail on unrelated configuration errors.
-    """
+    """Dispatch one command, loading the configuration only where it is used."""
+    # ``check-archive`` is a query about the archives named on the command
+    # line and says nothing about the release, so it never reads
+    # ``extensions.toml``: loading it for every command made an independent
+    # archive query fail on unrelated configuration errors.
     if args.command == "check-archive":
         if not args.archives:
             raise ManifestError("check-archive needs at least one archive path")

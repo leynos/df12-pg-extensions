@@ -113,3 +113,18 @@ credentials, and no runner step installs a tool or builds from source.
 test` pins the interpreter to 3.13 through `uv run --python 3.13`),
 `shellcheck`, `markdownlint-cli2`, and Docker or Podman for a local build
 (`DOCKER=podman`). `make all` runs every gate.
+
+### Command environment
+
+Table: Inputs the scripts and commands read.
+
+| Input | Command | Meaning |
+| ----- | ------- | ------- |
+| `PG_PORT` | `smoke_test.sh` | Port the smoke cluster listens on. Optional: when unset a random port between 20000 and 39999 is chosen. Whichever is used must be a decimal number between 1024 and 65535, and the script exits 2 with a message when it is not. Set it when a port has already been reserved, or to make a run reproducible. |
+| `DOCKER` | `build_in_container.sh` | Container runtime; `podman` substitutes for the default `docker`. |
+
+`build_manifest.py` loads `extensions.toml` only for the commands that use it.
+`build` and `verify` describe the release and need it. `check-archive` reports
+on the archives named on its command line and says nothing about the release,
+so it never reads the configuration and does not fail when the configuration is
+absent or malformed.
