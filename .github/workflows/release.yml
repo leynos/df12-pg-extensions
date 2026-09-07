@@ -61,13 +61,30 @@ jobs:
           # A published release is immutable: consumers pin its manifest digest,
           # and re-uploading with --clobber would change it under them. Only a
           # draft left by an earlier failed run of this same tag may be resumed.
-          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+          #
+          # The lookup's failure is kept rather than discarded. Sending its
+          # stderr to /dev/null would read a rate limit or a network fault as
+          # "no such release" and go on to create one, which is exactly how the
+          # immutability guard above gets bypassed. Only an explicit not-found
+          # counts as missing; anything else stops the job with the real error.
+          lookup_err="$(mktemp)"
+          lookup_status=0
+          is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft \
+            2>"$lookup_err")" || lookup_status=$?
+          if [ "$lookup_status" -eq 0 ]; then
             if [ "$is_draft" != "true" ]; then
               echo "release $TAG is already published; releases are immutable" >&2
               exit 1
             fi
+            echo "release lookup: tag=$TAG state=draft action=resume"
             exit 0
           fi
+          if ! grep -qi 'release not found' "$lookup_err"; then
+            echo "release lookup for $TAG failed with status $lookup_status:" >&2
+            cat "$lookup_err" >&2
+            exit 1
+          fi
+          echo "release lookup: tag=$TAG state=missing action=create"
           gh release create "$TAG" \
             --draft \
             --generate-notes \

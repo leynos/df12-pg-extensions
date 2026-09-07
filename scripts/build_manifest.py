@@ -342,7 +342,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run(args: argparse.Namespace, config: Config) -> None:
+def _run(args: argparse.Namespace) -> None:
+    """Dispatch one command.
+
+    ``check-archive`` is a query about the archives named on the command line
+    and says nothing about the release, so it does not read ``extensions.toml``
+    at all. Loading the configuration for every command made an independent
+    archive query fail on unrelated configuration errors.
+    """
     if args.command == "check-archive":
         if not args.archives:
             raise ManifestError("check-archive needs at least one archive path")
@@ -352,6 +359,7 @@ def _run(args: argparse.Namespace, config: Config) -> None:
         return
     if args.dist is None or args.tag is None or args.repository is None:
         raise ManifestError(f"{args.command} needs --dist, --tag and --repository")
+    config = load_config(args.config)
     if args.command == "build":
         generated_at = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
         manifest = build_manifest(
@@ -385,7 +393,7 @@ def main(argv: list[str]) -> int:
     """
     args = _parser().parse_args(argv)
     try:
-        _run(args, load_config(args.config))
+        _run(args)
     except (ConfigError, ManifestError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1

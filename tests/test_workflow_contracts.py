@@ -474,6 +474,53 @@ def test_scripts_are_executable_and_strict(script: str) -> None:
     )
 
 
+def test_smoke_test_takes_the_port_as_an_input() -> None:
+    """PG_PORT selects the port; the random default is only the fallback.
+
+    A caller that has already reserved a port, or that needs a reproducible
+    run, must be able to say so rather than have the script pick for it.
+    """
+    text = (SCRIPTS / "smoke_test.sh").read_text(encoding="utf-8")
+    assert 'port="${PG_PORT:-$((20000 + RANDOM % 20000))}"' in text, (
+        "PG_PORT must override the random default"
+    )
+    assert "PG_PORT must be a decimal port number" in text, (
+        "a non-numeric PG_PORT is rejected"
+    )
+    assert '[ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]' in text, (
+        "PG_PORT is range-checked before the server is started"
+    )
+    assert '-o "-p $port' in text, "the validated port is the one passed to pg_ctl"
+
+
+def test_release_lookup_failure_is_not_read_as_a_missing_release(
+    release: dict[str, Any],
+) -> None:
+    """A failed release lookup stops the job instead of creating a release.
+
+    Discarding the lookup's stderr would let a rate limit or a network fault
+    read as "no such release", and the job would then create one over a
+    published tag, bypassing the immutability guard.
+    """
+    create = next(step for step in steps_of(release, "create-release") if "run" in step)
+    text = create["run"]
+    assert "2>/dev/null" not in text, "the lookup error must not be discarded"
+    assert '2>"$lookup_err"' in text, "the lookup error is captured"
+    assert "|| lookup_status=$?" in text, "the lookup exit status is preserved"
+    assert "grep -qi 'release not found' \"$lookup_err\"" in text, (
+        "only an explicit not-found counts as missing"
+    )
+    guard = text.split("grep -qi 'release not found'")[1]
+    assert 'cat "$lookup_err" >&2' in guard, "the real error is emitted"
+    assert "exit 1" in guard.split("fi")[0], "any other failure stops the job"
+    assert "release lookup: tag=$TAG state=missing action=create" in text, (
+        "the create decision is recorded"
+    )
+    assert "release lookup: tag=$TAG state=draft action=resume" in text, (
+        "the resume decision is recorded"
+    )
+
+
 def test_container_build_uses_portable_flags_and_pgxs() -> None:
     """Both make invocations pass USE_PGXS=1, OPTFLAGS="" and with_llvm=no."""
     text = (SCRIPTS / "build_in_container.sh").read_text(encoding="utf-8")

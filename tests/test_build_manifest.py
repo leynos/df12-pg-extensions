@@ -179,6 +179,23 @@ def test_cli_check_archive(full_dist: Path, capsys) -> None:
     assert archive.name in capsys.readouterr().out
 
 
+def test_cli_check_archive_ignores_the_configuration(
+    full_dist: Path, tmp_path: Path, capsys
+) -> None:
+    """check-archive reports on the named archives without reading the config.
+
+    The archives are named on the command line, so the query says nothing about
+    the release. Pointing --config at a missing file and then at a malformed
+    one must not change the answer; previously either one failed the command.
+    """
+    archive = next(full_dist.glob("*.tar.gz"))
+    malformed = tmp_path / "broken.toml"
+    malformed.write_text("this is not toml = [", encoding="utf-8")
+    for config in (tmp_path / "absent.toml", malformed):
+        assert main(["--config", str(config), "check-archive", str(archive)]) == 0
+        assert archive.name in capsys.readouterr().out
+
+
 def test_cli_requires_dist_for_build(capsys) -> None:
     """Build and verify need --dist, --tag and --repository."""
     assert (

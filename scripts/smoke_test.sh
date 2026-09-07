@@ -60,7 +60,21 @@ test -f "$pg_root/share/extension/$EXT_NAME.control"
 
 "$pg_root/bin/initdb" --pgdata="$data_dir" --username=postgres --auth=trust \
   --no-sync >"$WORK_DIR/initdb.log" 2>&1
-port="$((20000 + RANDOM % 20000))"
+# The port is an input, not an ambient decision. A caller that needs a
+# reproducible run, or one that has already reserved a port, sets PG_PORT; the
+# random default only keeps an unattended run working. Both paths are validated
+# before the server is told to listen on the value.
+port="${PG_PORT:-$((20000 + RANDOM % 20000))}"
+case "$port" in
+  '' | *[!0-9]*)
+    echo "PG_PORT must be a decimal port number, got '$port'" >&2
+    exit 2
+    ;;
+esac
+if [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+  echo "PG_PORT must be between 1024 and 65535, got $port" >&2
+  exit 2
+fi
 cleanup() {
   "$pg_root/bin/pg_ctl" -D "$data_dir" -m fast stop >/dev/null 2>&1 || true
   rm -f "$socket_dir"/.s.PGSQL.*
