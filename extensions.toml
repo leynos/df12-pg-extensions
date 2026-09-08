@@ -1,0 +1,58 @@
+# Extensions built and published by df12-pg-extensions.
+#
+# Every (extension, postgresql version, target) combination listed here becomes
+# one release asset. The release workflow derives its build matrix from this
+# file, the manifest builder refuses to publish a release that is missing any
+# combination, and the workflow contract tests read the same file so the
+# workflows cannot drift from it.
+
+schema_version = 1
+
+[postgresql]
+# Theseus postgresql-binaries releases the estate pins. One archive is built
+# against each of them; the consumer hook matches on major.minor exactly.
+versions = ["16.15.0", "17.11.0", "18.6.0"]
+releases_url = "https://github.com/theseus-rs/postgresql-binaries/releases/download"
+
+# Rust target triples, matching the Theseus asset names and the compile target
+# of pg-embed-setup-unpriv. Each names the GitHub-hosted runner that builds it
+# natively and the container platform passed to `docker run`.
+[targets."x86_64-unknown-linux-gnu"]
+runner = "ubuntu-24.04"
+platform = "linux/amd64"
+
+[targets."aarch64-unknown-linux-gnu"]
+runner = "ubuntu-24.04-arm"
+platform = "linux/arm64"
+
+[build]
+# The Theseus postgres binary references glibc symbol versions up to
+# GLIBC_2.34, so an extension may reference nothing newer or it becomes
+# stricter than the server it loads into (RHEL 9 is at 2.34, Ubuntu 22.04 at
+# 2.35). almalinux:9 builds against glibc 2.34 exactly, and unlike debian:11
+# (2.31, archived since August 2026) its package mirrors are live. Pinned by
+# index digest so both platforms resolve the same image.
+image = "docker.io/library/almalinux:9@sha256:3a3fa7f043b142bc8008c8b308d39b47d2c84008addcd52f9f9a7a82d2a90474"
+# Highest glibc symbol version an archive may reference; the Theseus postgres
+# binary's own requirement. The container build checks every shared object
+# against it.
+max_glibc = "2.34"
+
+[smoke]
+# The one leg a pull request builds and smoke-tests end to end.
+package = "pgvector"
+postgresql_major = 17
+target = "x86_64-unknown-linux-gnu"
+
+[[extensions]]
+# Name as used by CREATE EXTENSION.
+name = "vector"
+# Upstream package name, used in archive file names.
+package = "pgvector"
+version = "0.8.6"
+repository = "https://github.com/pgvector/pgvector"
+tag = "v0.8.6"
+# Commit the tag resolves to; the build refuses a checkout whose HEAD differs.
+commit = "8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c"
+# SQL that must succeed against a fresh database after CREATE EXTENSION.
+smoke_sql = "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector"
