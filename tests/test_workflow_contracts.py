@@ -331,7 +331,9 @@ def test_release_audit_verifies_fresh_downloads(release: dict[str, Any]) -> None
         )
         for run in runs
     ), "audit must run build_manifest.py verify"
-    assert "permissions" not in release["jobs"]["audit"], "audit is read-only"
+    assert release["jobs"]["audit"]["permissions"] == {"contents": "write"}, (
+        "audit downloads a draft release, which contents: read cannot see"
+    )
 
 
 def test_release_smoke_verifies_sidecar_and_loads_extension(
@@ -363,18 +365,43 @@ def test_release_publishes_only_after_audit_and_smoke(release: dict[str, Any]) -
     assert publish["permissions"] == {"contents": "write"}, "publish edits the release"
 
 
-def test_release_write_permission_only_where_gh_mutates(
+def test_release_write_permission_wherever_a_job_touches_the_draft(
     release: dict[str, Any],
 ) -> None:
-    """Only jobs that create, upload or edit the release get contents: write."""
+    """Every job that reaches the draft release at all gets contents: write.
+
+    The earlier form of this contract asserted write "iff the job mutates the
+    release", which read naturally and was wrong. A draft release is invisible
+    to a token holding only contents: read: `gh release download` reports
+    "release not found", so the audit and smoke jobs failed on every asset
+    while their write-scoped siblings succeeded on the same command seconds
+    earlier. Reading a draft, not writing to one, is what needs the scope, so
+    the predicate is any `gh release` subcommand rather than the mutating
+    three. `prepare` runs none and must stay read-only, which keeps the rule
+    from collapsing into "write everywhere".
+    """
     for job, spec in release["jobs"].items():
-        mutates = any(
-            re.search(r"\bgh release (create|upload|edit)\b", step.get("run", ""))
+        touches_release = any(
+            re.search(r"\bgh release\b", step.get("run", ""))
             for step in spec.get("steps", [])
         )
-        assert (spec.get("permissions") == {"contents": "write"}) == mutates, (
-            f"{job}: contents: write iff the job mutates the release"
+        assert (spec.get("permissions") == {"contents": "write"}) == touches_release, (
+            f"{job}: contents: write iff the job runs a gh release subcommand"
         )
+
+
+def test_release_smoke_reads_the_draft_with_write_scope(
+    release: dict[str, Any],
+) -> None:
+    """Smoke downloads its leg's asset from the draft, so it needs write scope."""
+    smoke = release["jobs"]["smoke"]
+    assert any(
+        'gh release download "$TAG" --dir smoke-dist' in step.get("run", "")
+        for step in smoke["steps"]
+    ), "smoke must download its archive from the release"
+    assert smoke["permissions"] == {"contents": "write"}, (
+        "smoke downloads a draft release, which contents: read cannot see"
+    )
 
 
 # --- ci.yml -----------------------------------------------------------------

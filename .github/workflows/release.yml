@@ -171,6 +171,14 @@ jobs:
     name: Audit draft assets against the manifest
     needs: [prepare, manifest]
     runs-on: ubuntu-24.04
+    # A draft release is invisible to a token holding only contents: read:
+    # the API answers "release not found" rather than denying access, so a
+    # read-only verification job cannot tell an unpublished release from an
+    # absent one. This job only reads, but reading a draft is what needs the
+    # write scope. Narrowing it back to read makes the job fail closed on
+    # every release, which is how it was found.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -196,6 +204,14 @@ jobs:
     name: Smoke ${{ matrix.archive }}
     needs: [prepare, manifest]
     runs-on: ${{ matrix.runner }}
+    # A draft release is invisible to a token holding only contents: read:
+    # the API answers "release not found" rather than denying access, so a
+    # read-only verification job cannot tell an unpublished release from an
+    # absent one. This job only reads, but reading a draft is what needs the
+    # write scope. Narrowing it back to read makes the job fail closed on
+    # every release, which is how it was found.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
