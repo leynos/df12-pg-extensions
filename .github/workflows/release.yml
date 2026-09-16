@@ -184,21 +184,60 @@ jobs:
         with:
           persist-credentials: false
       - name: Download every draft asset afresh
+        id: download
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p audit-dist
-          gh release download "$TAG" --dir audit-dist
+          # The failure is categorised here rather than guessed later. A
+          # draft invisible to the token reports as absent, which looks
+          # exactly like a missing release, so the two are told apart by
+          # the message while the real stderr is still shown.
+          download_err="$(mktemp)"
+          status=0
+          gh release download "$TAG" --dir audit-dist 2>"$download_err" || status=$?
+          cat "$download_err" >&2
+          if [ "$status" -eq 0 ]; then
+            category=none
+          elif grep -qi 'release not found' "$download_err"; then
+            category=draft_not_visible
+          else
+            category=download_failed
+          fi
+          echo "category=$category" >> "$GITHUB_OUTPUT"
+          exit "$status"
       - name: Verify manifest, sidecars and archive layout
+        id: verify
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
           REPOSITORY: ${{ github.repository }}
         run: >-
           python3 scripts/build_manifest.py verify
           --dist audit-dist --tag "$TAG" --repository "$REPOSITORY"
+      - name: Record the audit outcome
+        if: always()
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          DOWNLOAD_CATEGORY: ${{ steps.download.outputs.category }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$DOWNLOAD_OUTCOME" != "success" ]; then
+            result=fail
+            category="${DOWNLOAD_CATEGORY:-download_failed}"
+          elif [ "$VERIFY_OUTCOME" != "success" ]; then
+            result=fail
+            category=verification_failed
+          else
+            result=pass
+            category=none
+          fi
+          python3 scripts/release_metrics.py --operation audit \
+            --result "$result" --error-category "$category" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
   smoke:
     name: Smoke ${{ matrix.archive }}
@@ -220,18 +259,37 @@ jobs:
         with:
           persist-credentials: false
       - name: Download this leg's archive and sidecar
+        id: download
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
           ARCHIVE: ${{ matrix.archive }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p smoke-dist
-          gh release download "$TAG" --dir smoke-dist --pattern "$ARCHIVE"
-          gh release download "$TAG" --dir smoke-dist --pattern "$ARCHIVE.sha256"
+          # Categorised as in audit: an invisible draft reports as absent.
+          download_err="$(mktemp)"
+          status=0
+          {
+            gh release download "$TAG" --dir smoke-dist --pattern "$ARCHIVE" &&
+            gh release download "$TAG" --dir smoke-dist --pattern "$ARCHIVE.sha256"
+          } 2>"$download_err" || status=$?
+          cat "$download_err" >&2
+          if [ "$status" -eq 0 ]; then
+            category=none
+          elif grep -qi 'release not found' "$download_err"; then
+            category=draft_not_visible
+          else
+            category=download_failed
+          fi
+          echo "category=$category" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           (cd smoke-dist && sha256sum -c "$ARCHIVE.sha256")
       - name: Load the extension into a Theseus PostgreSQL and query it
+        id: load
         env:
           EXT_NAME: ${{ matrix.name }}
           PG_VERSION: ${{ matrix.postgresql }}
@@ -240,6 +298,27 @@ jobs:
           SMOKE_SQL: ${{ matrix.smoke_sql }}
           THESEUS_RELEASES_URL: ${{ matrix.releases_url }}
         run: bash scripts/smoke_test.sh
+      - name: Record the smoke outcome
+        if: always()
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          DOWNLOAD_CATEGORY: ${{ steps.download.outputs.category }}
+          LOAD_OUTCOME: ${{ steps.load.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$DOWNLOAD_OUTCOME" != "success" ]; then
+            result=fail
+            category="${DOWNLOAD_CATEGORY:-download_failed}"
+          elif [ "$LOAD_OUTCOME" != "success" ]; then
+            result=fail
+            category=smoke_failed
+          else
+            result=pass
+            category=none
+          fi
+          python3 scripts/release_metrics.py --operation smoke \
+            --result "$result" --error-category "$category" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Publish release
