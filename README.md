@@ -1,7 +1,6 @@
 # df12-pg-extensions
 
-Prebuilt PostgreSQL extension archives for the estate's embedded test
-clusters.
+Prebuilt PostgreSQL extension archives for the estate's embedded test clusters.
 
 [`pg-embed-setup-unpriv`](https://github.com/leynos/pg-embed-setup-unpriv)
 starts a real PostgreSQL server for tests from the
@@ -9,12 +8,12 @@ starts a real PostgreSQL server for tests from the
 archives. Those archives carry only the in-tree contrib extensions, and the
 estate rule is that nothing is built from source in a consumer's continuous
 integration. This repository is the one place an extension is compiled: its
-release workflow builds each configured extension against each Theseus
-release and target, verifies the result by loading it into that PostgreSQL,
-and publishes per-target archives, `.sha256` sidecars and a manifest to a
-versioned GitHub release. The `pg-embed-setup-unpriv` extension hook
-downloads an archive from that release, checks its digest against the
-manifest, and installs it into the embedded tree before the server starts.
+release workflow builds each configured extension against each Theseus release
+and target, verifies the result by loading it into that PostgreSQL, and
+publishes per-target archives, `.sha256` sidecars and a manifest to a versioned
+GitHub release. The `pg-embed-setup-unpriv` extension hook downloads an archive
+from that release, checks its digest against the manifest, and installs it into
+the embedded tree before the server starts.
 
 ## What a release contains
 
@@ -26,8 +25,8 @@ For every extension, PostgreSQL version and target in `extensions.toml`:
 
 plus one `manifest.json` and its `manifest.json.sha256`.
 
-An archive is a gzip tar of regular files under exactly two prefixes
-relative to the PostgreSQL install root:
+An archive is a gzip tar of regular files under exactly two prefixes relative
+to the PostgreSQL install root:
 
 ```plaintext
 lib/<name>.so
@@ -37,13 +36,13 @@ share/extension/<name>--<from>--<to>.sql
 ```
 
 Nothing else is packaged: no headers, no LLVM bitcode, no symlinks. The
-consumer hook refuses any other layout, and `scripts/archive_rules.py`
-enforces the same rules on the publisher side.
+consumer hook refuses any other layout, and `scripts/archive_rules.py` enforces
+the same rules on the publisher side.
 
 ## Using a release from a consumer
 
-The hook is configured entirely through the environment. Pin the release by
-tag and by the manifest digest; the manifest carries every archive digest, so
+The hook is configured entirely through the environment. Pin the release by tag
+and by the manifest digest; the manifest carries every archive digest, so
 pinning the manifest pins the archives transitively.
 
 ```bash
@@ -53,12 +52,12 @@ export PG_EXTENSIONS_MANIFEST="https://github.com/leynos/df12-pg-extensions/rele
 export PG_EXTENSIONS_MANIFEST_SHA256="$(curl -fsSL "$PG_EXTENSIONS_MANIFEST.sha256" | cut -d' ' -f1)"
 ```
 
-Record the digest in the consumer repository rather than fetching it at
-run time; the `curl` above is only a way to read it once. The hook matches
-on the running PostgreSQL major and minor exactly, so `PG_VERSION_REQ` must
-name a Theseus release this repository builds against (see
-`extensions.toml`). The hook's design, its failure modes and the exact
-environment variables are specified in
+Record the digest in the consumer repository rather than fetching it at run
+time; the `curl` above is only a way to read it once. The hook matches on the
+running PostgreSQL major and minor exactly, so `PG_VERSION_REQ` must name a
+Theseus release this repository builds against (see `extensions.toml`). The
+hook's design, its failure modes and the exact environment variables are
+specified in
 [pg-embed-setup-unpriv#222](https://github.com/leynos/pg-embed-setup-unpriv/issues/222).
 
 ## Manifest schema
@@ -102,8 +101,8 @@ environment variables are specified in
 
 - `name` is the `CREATE EXTENSION` name; `package` is the upstream project.
 - `postgresql` is the Theseus release the archive was built against. Its
-  third component is a Theseus build number, so consumers match on major
-  and minor.
+  third component is a Theseus build number, so consumers match on major and
+  minor.
 - `target` is a Rust target triple, the same string Theseus uses in its
   asset names and the compile target of `pg-embed-setup-unpriv`.
 - `files` lists every regular file in the archive, sorted, so the hook can
@@ -113,12 +112,12 @@ environment variables are specified in
 
 ## How archives are built
 
-`scripts/build_extension.sh` runs `scripts/build_in_container.sh` inside
-the container image pinned by digest in `extensions.toml`. The image is
+`scripts/build_extension.sh` runs `scripts/build_in_container.sh` inside the
+container image pinned by digest in `extensions.toml`. The image is
 `almalinux:9` (glibc 2.34). The Theseus `postgres` binary references glibc
-symbol versions up to `GLIBC_2.34`, and an extension must never require a
-newer one than the server it loads into, or hosts that run the server (RHEL
-9 at 2.34, Ubuntu 22.04 at 2.35) would refuse the module. `max_glibc` in
+symbol versions up to `GLIBC_2.34`, and an extension must never require a newer
+one than the server it loads into, or hosts that run the server (RHEL 9 at
+2.34, Ubuntu 22.04 at 2.35) would refuse the module. `max_glibc` in
 `extensions.toml` records that floor and the container build fails if any
 shared object references a symbol version above it. Inside the container the
 script:
@@ -139,17 +138,17 @@ script:
 Every leg then runs `scripts/smoke_test.sh`, which unpacks a fresh Theseus
 tree, installs the archive over it exactly as the hook does, runs `initdb`,
 starts the server, executes `CREATE EXTENSION` and the `smoke_sql` from
-`extensions.toml`, and stops it. A release is undrafted only after every
-smoke leg passes and the audit job has re-downloaded every asset and
-verified the manifest against it.
+`extensions.toml`, and stops it. A release is undrafted only after every smoke
+leg passes and the audit job has re-downloaded every asset and verified the
+manifest against it.
 
 ## Adding or updating an extension
 
 1. Edit `extensions.toml`: add a `[[extensions]]` table with the upstream
    tag and the 40-hex commit it resolves to, or bump `version`, `tag` and
-   `commit` together. Add PostgreSQL versions to `[postgresql]` and targets
-   as `[targets.<triple>]` tables (runner label and container platform)
-   when the estate pins change.
+   `commit` together. Add PostgreSQL versions to `[postgresql]` and targets as
+   `[targets.<triple>]` tables (runner label and container platform) when the
+   estate pins change.
 2. Run `make all`. The workflow contracts read `extensions.toml`, so the
    matrix and the manifest expectations follow the file automatically.
 3. Open a pull request. CI builds the leg named in `[smoke]` end to end and
@@ -158,9 +157,8 @@ verified the manifest against it.
    builds every leg, publishes the assets and the manifest, audits and
    smoke-tests them, and undrafts the release.
 
-Releases are immutable. A rebuilt extension or a new PostgreSQL version is
-a new tag, and consumers move by updating the manifest URL and digest they
-pin.
+Releases are immutable. A rebuilt extension or a new PostgreSQL version is a
+new tag, and consumers move by updating the manifest URL and digest they pin.
 
 ## Local development
 
@@ -172,9 +170,9 @@ make matrix      # print the release matrix as JSON
 make smoke-leg   # print the configured pull-request smoke leg
 ```
 
-To build and smoke-test the configured smoke leg locally (Docker or Podman;
-set `DOCKER=podman` for Podman), export the leg's fields under the names
-the scripts expect, then run the same three steps CI runs:
+To build and smoke-test the configured smoke leg locally (Docker or Podman; set
+`DOCKER=podman` for Podman), export the leg's fields under the names the
+scripts expect, then run the same three steps CI runs:
 
 ```bash
 while IFS='=' read -r key value; do
@@ -193,8 +191,8 @@ ARCHIVE_PATH="dist/$ARCHIVE" bash scripts/smoke_test.sh
 ```
 
 See [`docs/users-guide.md`](docs/users-guide.md) for consumer setup and
-[`docs/developers-guide.md`](docs/developers-guide.md) for the
-configuration model, script boundaries and workflow design.
+[`docs/developers-guide.md`](docs/developers-guide.md) for the configuration
+model, script boundaries and workflow design.
 
 ## Licence
 
