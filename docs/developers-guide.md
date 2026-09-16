@@ -98,42 +98,42 @@ writes". It is:
 > Every job that runs a `gh release` subcommand needs `contents: write`,
 > including the jobs that only read.
 
-A draft release is invisible to a token holding only `contents: read`. The
-API reports it as absent rather than refusing access, so `gh release
-download` prints `release not found` and the job cannot tell an unpublished
-release from a missing one. Reading a draft, not writing to one, is what
-needs the scope.
+A draft release is invisible to a token holding only `contents: read`. The API
+reports it as absent rather than refusing access, so `gh release download`
+prints `release not found` and the job cannot tell an unpublished release from
+a missing one. Reading a draft, not writing to one, is what needs the scope.
 
-This is not theoretical. The `v1.0.0` release failed on exactly this: all
-six archives and the manifest were built and uploaded by the write-scoped
-jobs, and then `audit` and all six `smoke` legs failed against the draft
-they existed to verify, six legs out of six, while `manifest` had succeeded
-on the same command shape eleven seconds earlier.
+This is not theoretical. The `v1.0.0` release failed on exactly this: all six
+archives and the manifest were built and uploaded by the write-scoped jobs, and
+then `audit` and all six `smoke` legs failed against the draft they existed to
+verify, six legs out of six, while `manifest` had succeeded on the same command
+shape eleven seconds earlier.
 
-| Job | Runs a `gh release` subcommand | Scope |
-| --- | --- | --- |
-| `prepare` | no | inherits `contents: read` |
-| `create-release` | yes, `create` | `contents: write` |
-| `build-assets` | yes, `upload` | `contents: write` |
-| `manifest` | yes, `download` and `upload` | `contents: write` |
-| `audit` | yes, `download` only | `contents: write` |
-| `smoke` | yes, `download` only | `contents: write` |
-| `publish` | yes, `edit` | `contents: write` |
+| Job              | Runs a `gh release` subcommand | Scope                     |
+| ---------------- | ------------------------------ | ------------------------- |
+| `prepare`        | no                             | inherits `contents: read` |
+| `create-release` | yes, `create`                  | `contents: write`         |
+| `build-assets`   | yes, `upload`                  | `contents: write`         |
+| `manifest`       | yes, `download` and `upload`   | `contents: write`         |
+| `audit`          | yes, `download` only           | `contents: write`         |
+| `smoke`          | yes, `download` only           | `contents: write`         |
+| `publish`        | yes, `edit`                    | `contents: write`         |
 
-`prepare` is the job that keeps this from collapsing into "write
-everywhere", and the contract holds it read-only for that reason.
+`prepare` is the job that keeps this from collapsing into "write everywhere",
+and the contract holds it read-only for that reason.
 
 The verification jobs are deliberately not fed their assets through
-`upload-artifact` instead, which would let them run read-only. `audit`
-exists to re-download what is actually on the release rather than trust
-what the build produced, and `smoke` exists to load the published
-artefact. Passing build outputs sideways would leave both jobs green while
-deleting the property each is there to assert.
+`upload-artifact` instead, which would let them run read-only. `audit` exists
+to re-download what is actually on the release rather than trust what the build
+produced, and `smoke` exists to load the published artefact. Passing build
+outputs sideways would leave both jobs green while deleting the property each
+is there to assert.
 
-`tests/test_workflow_contracts.py` holds this rule over every job. An
-earlier form of the contract required write "iff the job mutates the
-release", which read naturally, matched the author's intent, and passed on
-the configuration that fails every release.
+`tests/test_release_permissions_contract.py` holds this rule over every job:
+any job running a `gh release` subcommand must declare `contents: write`. An
+earlier form of the contract required write "iff the job mutates the release",
+which read naturally, matched the author's intent, and passed on the
+configuration that fails every release.
 
 ## Tests
 
@@ -150,6 +150,15 @@ the configuration that fails every release.
   token, and one test runs `scripts/build_extension.sh` against a fake `docker`
   to prove the container invocation. When adding a contract, mutate the
   protected line once and confirm the test fails.
+- `tests/test_release_permissions_contract.py`: the token scope every job
+  that runs a `gh release` subcommand must carry.
+- `tests/test_release_metrics.py`: the closed label sets, and the refusal
+  of a result and category that disagree.
+- `tests/test_release_outcome_classification.py`: the release workflow's
+  own outcome-recording blocks, lifted out and run under each way a
+  verification job can end. A block that cannot emit its metric leaves a
+  failure with no aggregatable record, so the cases assert the line rather than
+  the exit status alone.
 
 ## Local prerequisites
 
