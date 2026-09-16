@@ -89,6 +89,52 @@ Updating the image digest: run
 Every `uses:` is pinned to a commit SHA, checkouts never persist credentials,
 and no runner step installs a tool or builds from source.
 
+### Release permissions, and why reading a draft needs `write`
+
+`release.yml` declares `contents: read` at the workflow level and raises
+individual jobs to `contents: write`. The rule is not "write where the job
+writes". It is:
+
+> Every job that runs a `gh release` subcommand needs `contents: write`,
+> including the jobs that only read.
+
+A draft release is invisible to a token holding only `contents: read`. The
+API reports it as absent rather than refusing access, so `gh release
+download` prints `release not found` and the job cannot tell an unpublished
+release from a missing one. Reading a draft, not writing to one, is what
+needs the scope.
+
+This is not theoretical. The `v1.0.0` release failed on exactly this: all
+six archives and the manifest were built and uploaded by the write-scoped
+jobs, and then `audit` and all six `smoke` legs failed against the draft
+they existed to verify, six legs out of six, while `manifest` had succeeded
+on the same command shape eleven seconds earlier.
+
+| Job | Runs a `gh release` subcommand | Scope |
+| --- | --- | --- |
+| `prepare` | no | inherits `contents: read` |
+| `create-release` | yes, `create` | `contents: write` |
+| `build-assets` | yes, `upload` | `contents: write` |
+| `manifest` | yes, `download` and `upload` | `contents: write` |
+| `audit` | yes, `download` only | `contents: write` |
+| `smoke` | yes, `download` only | `contents: write` |
+| `publish` | yes, `edit` | `contents: write` |
+
+`prepare` is the job that keeps this from collapsing into "write
+everywhere", and the contract holds it read-only for that reason.
+
+The verification jobs are deliberately not fed their assets through
+`upload-artifact` instead, which would let them run read-only. `audit`
+exists to re-download what is actually on the release rather than trust
+what the build produced, and `smoke` exists to load the published
+artefact. Passing build outputs sideways would leave both jobs green while
+deleting the property each is there to assert.
+
+`tests/test_workflow_contracts.py` holds this rule over every job. An
+earlier form of the contract required write "iff the job mutates the
+release", which read naturally, matched the author's intent, and passed on
+the configuration that fails every release.
+
 ## Tests
 
 `make test` runs pytest with Hypothesis:
