@@ -50,7 +50,23 @@ METRIC_NAME: typ.Final[str] = "release_verification"
 
 
 class MetricError(ValueError):
-    """A label outside its closed set, or a result and category that disagree."""
+    """A label outside its closed set, or a result and category that disagree.
+
+    Raised rather than returned, and derived from `ValueError` rather
+    than from a bespoke base, because the caller is a workflow step: the
+    only thing it can do with a bad label is fail, and it should fail
+    loudly enough that the release stops. Silently emitting the line
+    anyway would put a label outside the closed set into a dashboard,
+    which is the one thing bounding the sets was for.
+
+    Examples
+    --------
+    >>> try:
+    ...     metric_line("audit", "pass", "smoke_failed")
+    ... except MetricError as error:
+    ...     print(str(error).split(":")[0])
+    result 'pass' and error_category 'smoke_failed' disagree
+    """
 
 
 def _require(value: str, allowed: frozenset[str], label: str) -> str:
@@ -69,6 +85,29 @@ def metric_line(operation: str, result: str, error_category: str) -> str:
     category. Allowing either to disagree would let a dashboard count a
     failure with no cause, or a success with one.
 
+    Parameters
+    ----------
+    operation : str
+        Which verification job reported, one of `OPERATIONS`.
+    result : str
+        Whether it completed, one of `RESULTS`.
+    error_category : str
+        Why it did not, one of `ERROR_CATEGORIES`, or ``none`` when it
+        did.
+
+    Returns
+    -------
+    str
+        The metric line, ready to print.
+
+    Raises
+    ------
+    MetricError
+        If any label is outside its closed set, or if the result and the
+        category disagree.
+
+    Examples
+    --------
     >>> metric_line("audit", "pass", "none")
     'release_verification operation=audit result=pass error_category=none'
     >>> metric_line("smoke", "fail", "draft_not_visible")
@@ -90,7 +129,29 @@ def metric_line(operation: str, result: str, error_category: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print one metric line, refusing any label outside its closed set."""
+    """Print one metric line, refusing any label outside its closed set.
+
+    Parameters
+    ----------
+    argv : list[str] or None
+        Command-line arguments. None reads `sys.argv`, which is what the
+        workflow step does.
+
+    Returns
+    -------
+    int
+        0 when a line was printed, 2 when the labels were refused. The
+        refusal is reported on standard error and returned rather than
+        raised, so the step fails with a message naming the label rather
+        than with a traceback.
+
+    Examples
+    --------
+    >>> main(["--operation", "audit", "--result", "pass",
+    ...       "--error-category", "none"])
+    release_verification operation=audit result=pass error_category=none
+    0
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--operation", required=True)
     parser.add_argument("--result", required=True)
