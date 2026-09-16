@@ -284,10 +284,22 @@ jobs:
             category=download_failed
           fi
           echo "category=$category" >> "$GITHUB_OUTPUT"
-          if [ "$status" -ne 0 ]; then
-            exit "$status"
-          fi
-          (cd smoke-dist && sha256sum -c "$ARCHIVE.sha256")
+          exit "$status"
+      # Its own step, and not the tail of the download, because the
+      # outcome each step reports is what the metric below classifies. A
+      # checksum failure inside the download step would fail that step
+      # with its category already written as `none`, and a failure with
+      # no cause is the one combination `release_metrics.py` refuses, so
+      # the metric step would abort and record nothing at all. `audit`
+      # separates its verification from its download for the same
+      # reason; this now matches it.
+      - name: Verify the archive against its sidecar
+        id: verify
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          cd smoke-dist && sha256sum -c "$ARCHIVE.sha256"
       - name: Load the extension into a Theseus PostgreSQL and query it
         id: load
         env:
@@ -303,12 +315,16 @@ jobs:
         env:
           DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
           DOWNLOAD_CATEGORY: ${{ steps.download.outputs.category }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
           LOAD_OUTCOME: ${{ steps.load.outcome }}
         run: |
           set -euo pipefail
           if [ "$DOWNLOAD_OUTCOME" != "success" ]; then
             result=fail
             category="${DOWNLOAD_CATEGORY:-download_failed}"
+          elif [ "$VERIFY_OUTCOME" != "success" ]; then
+            result=fail
+            category=verification_failed
           elif [ "$LOAD_OUTCOME" != "success" ]; then
             result=fail
             category=smoke_failed

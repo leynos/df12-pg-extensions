@@ -341,9 +341,9 @@ def test_release_smoke_verifies_sidecar_and_loads_extension(
 ) -> None:
     """Every leg checks its sidecar, then loads the archive into PostgreSQL."""
     runs = [step.get("run", "") for step in steps_of(release, "smoke")]
-    assert any(
-        '(cd smoke-dist && sha256sum -c "$ARCHIVE.sha256")' in run for run in runs
-    ), "smoke must verify the downloaded archive against its sidecar"
+    assert any('sha256sum -c "$ARCHIVE.sha256"' in run for run in runs), (
+        "smoke must verify the downloaded archive against its sidecar"
+    )
     step = step_running(release, "smoke", "bash scripts/smoke_test.sh")
     assert step["env"] == {
         "EXT_NAME": "${{ matrix.name }}",
