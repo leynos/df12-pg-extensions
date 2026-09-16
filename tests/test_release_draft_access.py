@@ -8,9 +8,18 @@ container-invocation test uses with a stand-in for `docker`.
 
 What this proves and what it does not is worth stating, because it would be
 easy to read more into it. It does **not** establish that a draft release is
-invisible to a `contents: read` token: that is GitHub's behaviour, it is why
-`v1.0.0` failed, and no test written here could establish it. The stand-in
-encodes that behaviour as an executable specification.
+invisible to a `contents: read` token: that is GitHub's behaviour, and no
+test written here could establish it. A stand-in cannot supply evidence
+about the thing it stands in for.
+
+That evidence exists, and it is not a test. Release run 34995521161 is the
+`v1.0.0` run in which `audit` and all six `smoke` legs failed against a
+draft that demonstrably existed with fourteen assets, under the read scope
+they then had, while the write-scoped `manifest` job had downloaded from
+the same release eleven seconds earlier. The run of the same tag after the
+retag, under the write scope this change grants, is the other half. Those
+two runs are the end-to-end evidence for the GitHub fact; what follows is
+the evidence for ours.
 
 What it proves is everything on our side of that boundary: that the block
 the workflow actually runs succeeds under the write scope, fails under the
