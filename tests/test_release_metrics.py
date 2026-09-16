@@ -27,14 +27,19 @@ def test_a_passing_operation_reads_as_one_line_with_no_cause() -> None:
     """A pass carries the operation, the result and ``none``."""
     assert metric_line("audit", "pass", "none") == (
         "release_verification operation=audit result=pass error_category=none"
-    )
+    ), "a passing operation must read as one line carrying none"
 
 
 def test_the_invisible_draft_has_a_category_of_its_own() -> None:
     """The fault that cost v1.0.0 is legible from the metric alone."""
     line = metric_line("smoke", "fail", "draft_not_visible")
-    assert "error_category=draft_not_visible" in line
-    assert line.startswith(f"{METRIC_NAME} operation=smoke")
+    assert "error_category=draft_not_visible" in line, (
+        f"the invisible draft must be named as its own cause, not folded "
+        f"into a download failure: {line!r}"
+    )
+    assert line.startswith(f"{METRIC_NAME} operation=smoke"), (
+        f"the line must open with the measurement and the operation: {line!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -86,12 +91,18 @@ def test_arbitrary_labels_never_reach_the_line(
         line = metric_line(operation, result, category)
     except MetricError:
         return
-    assert operation in OPERATIONS
-    assert result in RESULTS
-    assert category in ERROR_CATEGORIES
+    assert operation in OPERATIONS, (
+        f"a line was built for operation {operation!r}, which is not in the closed set"
+    )
+    assert result in RESULTS, (
+        f"a line was built for result {result!r}, which is not in the closed set"
+    )
+    assert category in ERROR_CATEGORIES, (
+        f"a line was built for category {category!r}, which is not in the closed set"
+    )
     assert line == (
         f"{METRIC_NAME} operation={operation} result={result} error_category={category}"
-    )
+    ), f"the accepted labels must reach the line unaltered: {line!r}"
 
 
 def test_the_command_prints_the_line_and_succeeds(
@@ -101,10 +112,10 @@ def test_the_command_prints_the_line_and_succeeds(
     code = main(
         ["--operation", "audit", "--result", "pass", "--error-category", "none"]
     )
-    assert code == 0
+    assert code == 0, f"a well-formed metric must exit 0, not {code}"
     assert capsys.readouterr().out.strip() == (
         "release_verification operation=audit result=pass error_category=none"
-    )
+    ), "the command must print the line the workflow appends to its summary"
 
 
 def test_the_command_refuses_an_unbounded_label_without_printing_it(
@@ -121,7 +132,12 @@ def test_the_command_refuses_an_unbounded_label_without_printing_it(
             "pgvector-0.8.6-pg17.11.0-x86_64-unknown-linux-gnu.tar.gz",
         ]
     )
-    assert code == 2
+    assert code == 2, f"a refused label must exit 2, not {code}"
     captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "must be one of" in captured.err
+    assert captured.out == "", (
+        f"nothing a collector could ingest may reach stdout, but the command "
+        f"printed {captured.out!r}"
+    )
+    assert "must be one of" in captured.err, (
+        f"the refusal must name the permitted set on stderr: {captured.err!r}"
+    )
