@@ -49,15 +49,31 @@ def test_release_write_permission_wherever_a_job_touches_the_draft(
     the predicate is any `gh release` subcommand rather than the mutating
     three. `prepare` runs none and must stay read-only, which keeps the rule
     from collapsing into "write everywhere".
+
+    The `contents` scope is read on its own rather than by comparing the
+    whole mapping. Compared whole, a job carrying
+    `{"contents": "write", "id-token": "write"}` is unequal to the
+    least-privilege mapping, so the left side reads false and a job that
+    runs no `gh release` subcommand passes while holding write on the
+    repository's contents: the assertion that exists to refuse that grant
+    is the one the extra key defeats. The whole mapping is still asserted
+    for the jobs that do touch the release, because there least privilege
+    is the point.
     """
     for job, spec in release["jobs"].items():
         touches_release = any(
             re.search(r"\bgh release\b", step.get("run", ""))
             for step in spec.get("steps", [])
         )
-        assert (spec.get("permissions") == {"contents": "write"}) == touches_release, (
+        permissions = spec.get("permissions") or {}
+        assert (permissions.get("contents") == "write") == touches_release, (
             f"{job}: contents: write iff the job runs a gh release subcommand"
         )
+        if touches_release:
+            assert permissions == {"contents": "write"}, (
+                f"{job}: a job that touches the release takes contents: write "
+                f"and nothing else"
+            )
 
 
 def test_release_smoke_reads_the_draft_with_write_scope(
@@ -112,13 +128,16 @@ def test_every_verification_job_records_a_bounded_outcome(
 def test_a_download_that_cannot_see_the_draft_is_categorised(
     release: dict[str, typ.Any],
 ) -> None:
-    """Each verification job tells an invisible draft from a missing one.
+    """Each verification job categorises the not-found answer of its own.
 
     "release not found" is what the API says for both an unpublished
     release the token cannot see and a release that is genuinely absent.
-    That ambiguity is what made the v1.0.0 failure unreadable, so the
-    download step matches the message and reports `draft_not_visible`
-    rather than letting it fall through as a generic download failure.
+    Nothing downstream can tell those two apart, and this contract does
+    not claim it does: both arrive as `draft_not_visible`. What the
+    download step draws is the other line, between that answer and every
+    other way a download can fail. Falling through as a generic download
+    failure is what made the v1.0.0 run unreadable, because the category
+    named nothing that pointed at the scope.
     """
     for job in ("audit", "smoke"):
         runs = [step.get("run", "") for step in _steps_of(release, job)]
