@@ -150,8 +150,16 @@ configuration that fails every release.
   token, and one test runs `scripts/build_extension.sh` against a fake `docker`
   to prove the container invocation. When adding a contract, mutate the
   protected line once and confirm the test fails.
+- `tests/test_makefile_gates_contract.py`: the Make recipes CI invokes, read
+  as commands rather than as text, so that two gates collapsed into one command
+  line fail rather than satisfying both descriptions.
 - `tests/test_release_permissions_contract.py`: the token scope every job
   that runs a `gh release` subcommand must carry.
+- `tests/test_release_draft_access.py`: the release workflow's own download
+  blocks, lifted out and run under each token scope against a stand-in for
+  `gh`. It proves what happens on our side of the GitHub boundary, not that a
+  draft is invisible to a read-scoped token; the `v1.0.0` runs are the evidence
+  for that.
 - `tests/test_release_metrics.py`: the closed label sets, and the refusal
   of a result and category that disagree.
 - `tests/test_release_outcome_classification.py`: the release workflow's

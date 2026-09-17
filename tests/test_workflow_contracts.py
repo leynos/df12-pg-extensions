@@ -427,56 +427,6 @@ def test_ci_smoke_build_exercises_the_full_pipeline_for_the_configured_leg(
     ), "releases URL from the leg"
 
 
-# --- Makefile ---------------------------------------------------------------
-
-
-def test_makefile_declares_every_gate_ci_runs() -> None:
-    """The Make targets CI invokes exist and do what the workflow expects."""
-    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    for target, needle in (
-        ("check-fmt", "ruff@$(RUFF_VERSION) format --check"),
-        ("shellcheck", "shellcheck --shell=bash $(SHELL_SOURCES)"),
-        ("ruff", "ruff@$(RUFF_VERSION) check $(PY_SOURCES)"),
-        ("smoke-leg", "scripts/matrix.py extensions.toml --smoke-leg"),
-    ):
-        recipe = re.search(
-            rf"^{re.escape(target)}:.*\n((?:\t.*\n)+)", makefile, flags=re.MULTILINE
-        )
-        assert recipe, f"Makefile target {target} is missing"
-        assert needle in recipe.group(1), f"Makefile target {target} must run {needle}"
-
-
-def test_make_test_runs_the_suite_and_the_doctests_separately() -> None:
-    """`make test` runs two pytest commands, and only one restricts collection.
-
-    Asserted per command line rather than as two substrings of the whole
-    recipe. A single line reading `python -m pytest --doctest-modules
-    scripts` satisfies both substrings at once, and it collects nothing
-    but `scripts/`: the unit tests, the property tests and every contract
-    in this directory would stop running while the contract that exists to
-    keep them running went on passing. So the lines are counted, one
-    required to carry the flag and one required not to.
-    """
-    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = re.search(r"^test:.*\n((?:\t.*\n)+)", makefile, flags=re.MULTILINE)
-    assert recipe, "Makefile target test is missing"
-    commands = [
-        line.strip()
-        for line in recipe.group(1).splitlines()
-        if "python -m pytest" in line
-    ]
-    doctest_passes = [line for line in commands if "--doctest-modules scripts" in line]
-    suite_passes = [line for line in commands if "--doctest-modules" not in line]
-    assert len(suite_passes) == 1, (
-        f"make test must run the suite in a pytest command of its own; "
-        f"found {suite_passes}"
-    )
-    assert len(doctest_passes) == 1, (
-        f"make test must run the docstring examples in scripts/ in a pytest "
-        f"command of its own; found {doctest_passes}"
-    )
-
-
 # --- scripts ----------------------------------------------------------------
 
 
