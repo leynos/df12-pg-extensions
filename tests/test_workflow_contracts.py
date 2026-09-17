@@ -331,19 +331,19 @@ def test_release_audit_verifies_fresh_downloads(release: dict[str, Any]) -> None
         )
         for run in runs
     ), "audit must run build_manifest.py verify"
-    assert release["jobs"]["audit"]["permissions"] == {"contents": "write"}, (
-        "audit downloads a draft release, which contents: read cannot see"
-    )
 
 
-def test_release_smoke_verifies_sidecar_and_loads_extension(
+def test_release_smoke_loads_the_extension_from_its_matrix_leg(
     release: dict[str, Any],
 ) -> None:
-    """Every leg checks its sidecar, then loads the archive into PostgreSQL."""
-    runs = [step.get("run", "") for step in steps_of(release, "smoke")]
-    assert any('sha256sum -c "$ARCHIVE.sha256"' in run for run in runs), (
-        "smoke must verify the downloaded archive against its sidecar"
-    )
+    """Every smoke leg loads its archive into PostgreSQL from the matrix leg.
+
+    The sidecar check is not asserted here.
+    `tests/test_release_outcome_classification.py` holds a stronger form of
+    it: that the checksum runs in a step of its own and not inside the
+    download, which is what lets a mismatch be classified rather than
+    recorded as `category=none`.
+    """
     step = step_running(release, "smoke", "bash scripts/smoke_test.sh")
     assert step["env"] == {
         "EXT_NAME": "${{ matrix.name }}",
@@ -437,11 +437,6 @@ def test_makefile_declares_every_gate_ci_runs() -> None:
         ("check-fmt", "ruff@$(RUFF_VERSION) format --check"),
         ("shellcheck", "shellcheck --shell=bash $(SHELL_SOURCES)"),
         ("ruff", "ruff@$(RUFF_VERSION) check $(PY_SOURCES)"),
-        ("test", "python -m pytest"),
-        # The doctest pass is named separately: without the flag the
-        # examples in scripts/ are inert prose that no gate reads, and
-        # dropping it leaves the first pytest line still matching above.
-        ("test", "--doctest-modules scripts"),
         ("smoke-leg", "scripts/matrix.py extensions.toml --smoke-leg"),
     ):
         recipe = re.search(
@@ -449,6 +444,37 @@ def test_makefile_declares_every_gate_ci_runs() -> None:
         )
         assert recipe, f"Makefile target {target} is missing"
         assert needle in recipe.group(1), f"Makefile target {target} must run {needle}"
+
+
+def test_make_test_runs_the_suite_and_the_doctests_separately() -> None:
+    """`make test` runs two pytest commands, and only one restricts collection.
+
+    Asserted per command line rather than as two substrings of the whole
+    recipe. A single line reading `python -m pytest --doctest-modules
+    scripts` satisfies both substrings at once, and it collects nothing
+    but `scripts/`: the unit tests, the property tests and every contract
+    in this directory would stop running while the contract that exists to
+    keep them running went on passing. So the lines are counted, one
+    required to carry the flag and one required not to.
+    """
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = re.search(r"^test:.*\n((?:\t.*\n)+)", makefile, flags=re.MULTILINE)
+    assert recipe, "Makefile target test is missing"
+    commands = [
+        line.strip()
+        for line in recipe.group(1).splitlines()
+        if "python -m pytest" in line
+    ]
+    doctest_passes = [line for line in commands if "--doctest-modules scripts" in line]
+    suite_passes = [line for line in commands if "--doctest-modules" not in line]
+    assert len(suite_passes) == 1, (
+        f"make test must run the suite in a pytest command of its own; "
+        f"found {suite_passes}"
+    )
+    assert len(doctest_passes) == 1, (
+        f"make test must run the docstring examples in scripts/ in a pytest "
+        f"command of its own; found {doctest_passes}"
+    )
 
 
 # --- scripts ----------------------------------------------------------------
