@@ -23,11 +23,15 @@ the evidence for ours.
 
 What it proves is everything on our side of that boundary: that the block
 the workflow actually runs succeeds under the write scope, fails under the
-read scope, tells an invisible draft from a genuinely missing release, and
-reports each as the category the metric step then reads. A later edit that
-swaps the download for something else, drops the token from the step's
-environment, or lets the invisible draft fall through as a generic failure
-is caught here rather than on the next release.
+read scope, and separates the shared "release not found" response from a
+generic download failure, reporting it as the category the metric step then
+reads. It does not tell an invisible draft from a genuinely missing one, and
+nothing could: the API says the same sentence for both, which is why both
+arrive as `draft_not_visible`. The distinction the category draws is between
+that answer and every other way a download can fail. A later edit that swaps
+the download for something else, drops the token from the step's environment,
+or lets the not-found answer fall through as a generic failure is caught here
+rather than on the next release.
 """
 
 from __future__ import annotations
@@ -62,14 +66,12 @@ _EXPRESSIONS: typ.Final[dict[str, str]] = {
 }
 
 
+# The environment comes from the step rather than from this file, so a step
+# that stops declaring `GH_TOKEN` is a step the harness runs without one.
+# Supplying it here instead would make the test blind to exactly the edit most
+# likely to break the download.
 def _download_step(job: str) -> tuple[str, dict[str, str]]:
-    """Return the download step's `run:` script and its declared environment.
-
-    The environment comes from the step rather than from this file, so a
-    step that stops declaring `GH_TOKEN` is a step the harness runs without
-    one. Supplying it here instead would make the test blind to exactly the
-    edit most likely to break the download.
-    """
+    """Return the download step's `run:` script and its declared environment."""
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     )
@@ -90,19 +92,17 @@ def _download_step(job: str) -> tuple[str, dict[str, str]]:
     return step["run"], declared
 
 
+# The scope is read from the token the step passes, not baked in, so a step
+# that stops passing one is a step that can no longer see the draft. That is
+# how the real thing behaves, and a stand-in that ignored the token would let a
+# dropped `GH_TOKEN` pass unnoticed.
+#
+# A draft is served only to a token carrying `contents: write`. To any other
+# token the API reports the release as absent rather than refusing access, and
+# it says the same thing when the release really is absent, so both cases print
+# the one message.
 def _fake_gh(tmp_path: Path, *, release_exists: bool = True) -> Path:
-    """Write a stand-in for `gh` that answers as the releases API does.
-
-    The scope is read from the token the step passes, not baked in, so a
-    step that stops passing one is a step that can no longer see the
-    draft. That is how the real thing behaves, and a stand-in that ignored
-    the token would let a dropped `GH_TOKEN` pass unnoticed.
-
-    A draft is served only to a token carrying `contents: write`. To any
-    other token the API reports the release as absent rather than refusing
-    access, and it says the same thing when the release really is absent,
-    so both cases print the one message.
-    """
+    """Write a stand-in for `gh` that answers as the releases API does."""
     fake = tmp_path / "fake-gh"
     body = [
         "#!/usr/bin/env bash",
@@ -146,15 +146,13 @@ def _fake_gh(tmp_path: Path, *, release_exists: bool = True) -> Path:
     return fake
 
 
+# Returns the exit status, the standard error, and the step outputs the block
+# wrote. The token the step declares is given the scope under test; the rest of
+# the environment is the step's own.
 def _run_download(
     job: str, tmp_path: Path, *, scope: str, release_exists: bool = True
 ) -> tuple[int, str, dict[str, str]]:
-    """Run the job's download step with the stand-in on PATH.
-
-    Returns its exit status, its standard error, and the step outputs it
-    wrote. The token the step declares is given the scope under test; the
-    rest of the environment is the step's own.
-    """
+    """Run the job's download step with the stand-in on PATH."""
     block, declared = _download_step(job)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)

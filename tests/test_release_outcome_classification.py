@@ -37,18 +37,7 @@ METRIC_NAME: typ.Final[str] = "release_verification"
 
 
 def _record_step(job: str) -> str:
-    """Return the outcome-recording step's `run:` script for one job.
-
-    Parameters
-    ----------
-    job : str
-        The job's identifier.
-
-    Returns
-    -------
-    str
-        The script, verbatim.
-    """
+    """Return the outcome-recording step's `run:` script for one job."""
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     )
@@ -61,23 +50,10 @@ def _record_step(job: str) -> str:
     return steps[0]["run"]
 
 
+# `outcomes` is the environment the block reads, such as `DOWNLOAD_OUTCOME`;
+# `tmp_path` holds the step summary the block appends to.
 def _run_record(job: str, tmp_path: Path, **outcomes: str) -> Emitted:
-    """Run the job's recording block with the given step outcomes.
-
-    Parameters
-    ----------
-    job : str
-        The job's identifier.
-    tmp_path : Path
-        A directory for the step summary the block appends to.
-    **outcomes : str
-        The environment the block reads, such as `DOWNLOAD_OUTCOME`.
-
-    Returns
-    -------
-    Emitted
-        The exit status and the standard output.
-    """
+    """Run the job's recording block with the given step outcomes."""
     summary = tmp_path / "summary"
     summary.write_text("", encoding="utf-8")
     completed = subprocess.run(
@@ -114,23 +90,11 @@ class Emitted(typ.NamedTuple):
     stdout: str
 
 
+# The result is derived from the category rather than passed separately: they
+# are not independent, and a case free to state a passing result beside a cause
+# would be asserting a combination `metric_line` refuses.
 def _assert_metric(emitted: Emitted, operation: str, expected_category: str) -> None:
-    """Assert the block emitted exactly the metric the outcome implies.
-
-    The result is derived from the category rather than passed
-    separately: they are not independent, and a case free to state a
-    passing result beside a cause would be asserting a combination
-    `metric_line` refuses.
-
-    Parameters
-    ----------
-    emitted : Emitted
-        The block's exit status and output.
-    operation : str
-        The operation the line must name.
-    expected_category : str
-        The error category it must carry, or ``none``.
-    """
+    """Assert the block emitted exactly the metric the outcome implies."""
     result = "pass" if expected_category == "none" else "fail"
     expected = (
         f"{METRIC_NAME} operation={operation} result={result} "
