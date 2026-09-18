@@ -125,10 +125,10 @@ def test_every_verification_job_records_a_bounded_outcome(
         )
 
 
-def test_a_download_that_cannot_see_the_draft_is_categorised(
+def test_a_download_that_cannot_see_the_draft_is_categorized(
     release: dict[str, typ.Any],
 ) -> None:
-    """Each verification job categorises the not-found answer of its own.
+    """Each verification job categorizes the not-found answer of its own.
 
     "release not found" is what the API says for both an unpublished
     release the token cannot see and a release that is genuinely absent.
@@ -144,7 +144,7 @@ def test_a_download_that_cannot_see_the_draft_is_categorised(
         download = [run for run in runs if "gh release download" in run]
         assert len(download) == 1, f"{job} downloads in exactly one step"
         assert "release not found" in download[0], (
-            f"{job} must recognise the invisible-draft message"
+            f"{job} must recognize the invisible-draft message"
         )
         assert "category=draft_not_visible" in download[0], (
             f"{job} must report the invisible draft as its own category"

@@ -137,7 +137,14 @@ configuration that fails every release.
 
 ## Tests
 
-`make test` runs pytest with Hypothesis:
+`make test` runs pytest with Hypothesis twice. The first pass,
+`python -m pytest -q`, collects the files below. The second,
+`python -m pytest -q --doctest-modules scripts`, collects the docstring
+examples in `scripts/`, which the first pass does not see. They are separate
+commands because a single invocation carrying both would count as one gate to a
+contract reading the recipe by command line.
+
+The first pass collects:
 
 - `tests/test_pgx_config.py`: configuration parsing and every rejection.
 - `tests/test_archive_rules.py`: path classification (exhaustive cases plus
@@ -157,9 +164,9 @@ configuration that fails every release.
   that runs a `gh release` subcommand must carry.
 - `tests/test_release_draft_access.py`: the release workflow's own download
   blocks, lifted out and run under each token scope against a stand-in for
-  `gh`. It proves what happens on our side of the GitHub boundary, not that a
-  draft is invisible to a read-scoped token; the `v1.0.0` runs are the evidence
-  for that.
+  `gh`. It proves what happens on the workflow side of the GitHub boundary, not
+  that a draft is invisible to a read-scoped token; the `v1.0.0` runs are the
+  evidence for that.
 - `tests/test_release_metrics.py`: the closed label sets, and the refusal
   of a result and category that disagree.
 - `tests/test_release_outcome_classification.py`: the release workflow's
