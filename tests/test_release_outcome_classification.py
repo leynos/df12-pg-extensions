@@ -72,7 +72,9 @@ def _run_record(job: str, tmp_path: Path, **outcomes: str) -> Emitted:
         text=True,
         check=False,
     )
-    return Emitted(completed.returncode, completed.stdout)
+    return Emitted(
+        completed.returncode, completed.stdout, summary.read_text(encoding="utf-8")
+    )
 
 
 class Emitted(typ.NamedTuple):
@@ -84,10 +86,13 @@ class Emitted(typ.NamedTuple):
         Its exit status.
     stdout : str
         What it printed.
+    summary : str
+        What it appended to the step summary.
     """
 
     status: int
     stdout: str
+    summary: str
 
 
 # The result is derived from the category rather than passed separately: they
@@ -107,6 +112,11 @@ def _assert_metric(emitted: Emitted, operation: str, expected_category: str) -> 
     )
     assert emitted.stdout.strip() == expected, (
         f"expected {expected!r}, got {emitted.stdout.strip()!r}"
+    )
+    # The step summary is the copy an operator reads on the run page; the
+    # log line alone would pass with the `tee` into it deleted.
+    assert emitted.summary.strip() == expected, (
+        f"the step summary must carry exactly {expected!r}, got {emitted.summary!r}"
     )
 
 
@@ -229,6 +239,10 @@ def test_a_failure_carrying_no_cause_records_nothing(tmp_path: Path) -> None:
     assert METRIC_NAME not in emitted.stdout, (
         f"no metric line may be emitted for a refused combination, but the "
         f"block printed {emitted.stdout!r}"
+    )
+    assert METRIC_NAME not in emitted.summary, (
+        f"a refused combination must not reach the step summary either, but "
+        f"it holds {emitted.summary!r}"
     )
 
 

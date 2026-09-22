@@ -40,6 +40,7 @@ and tests never fall back to a default for a missing key.
 | `scripts/build_in_container.sh` | container  | Fetches and verifies Theseus, checks out the pinned commit, builds with PGXS, packages `lib/` and `share/extension/`        |
 | `scripts/smoke_test.sh`         | runner     | Installs an archive into a fresh Theseus tree and runs `CREATE EXTENSION` plus `smoke_sql`                                  |
 | `scripts/build_manifest.py`     | runner     | `build`, `verify` and `check-archive`; `collect_extensions` is clock-free, the timestamp is injected by the `build` command |
+| `scripts/release_metrics.py`    | runner     | Prints one bounded `release_verification` line per verification job outcome, refusing any label outside its closed set      |
 
 Environment contract. Required by `build_extension.sh` and supplied by a matrix
 leg (or the `--smoke-leg` output) with no fallback: `EXT_NAME`, `EXT_PACKAGE`,
@@ -51,6 +52,22 @@ locally) and `SOURCE_DATE_EPOCH` (`0`, for reproducible tar mtimes). The
 wrapper exports the required set plus `DIST_DIR`, `MAX_GLIBC`,
 `THESEUS_RELEASES_URL` and `SOURCE_DATE_EPOCH` into the container, where
 `build_in_container.sh` requires all of them again.
+
+Release metrics. The `audit` and `smoke` jobs in `release.yml` each end with a
+recording step that runs
+`release_metrics.py --operation <op> --result <result>
+--error-category <category>`
+under `always()` and appends the line to the step summary as well as the log.
+The line reads
+`release_verification operation=<op> result=<result> error_category=<category>`.
+Every label comes from a closed set: `OPERATIONS` (`audit`, `smoke`), `RESULTS`
+(`pass`, `fail`) and `ERROR_CATEGORIES` (`none`, `draft_not_visible`,
+`download_failed`, `verification_failed`, `smoke_failed`). A passing result
+carries `none` and a failing one carries a real category; `metric_line` raises
+`MetricError` for any other combination or label, and `main` reports the
+refusal on standard error and exits 2, so the recording step fails rather than
+emit a label a dashboard cannot aggregate. Tags, archive names and error text
+stay in the job log and never become labels.
 
 ## Container build requirements
 

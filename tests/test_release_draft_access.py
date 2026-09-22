@@ -37,6 +37,7 @@ rather than on the next release.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import typing as typ
 from pathlib import Path
@@ -101,12 +102,22 @@ def _download_step(job: str) -> tuple[str, dict[str, str]]:
 # token the API reports the release as absent rather than refusing access, and
 # it says the same thing when the release really is absent, so both cases print
 # the one message.
-def _fake_gh(tmp_path: Path, *, release_exists: bool = True) -> Path:
+#
+# `failure` makes every call fail with that message instead, standing in for
+# the other ways a download goes wrong: a timeout, a server error, a network
+# fault. None of them says "release not found".
+def _fake_gh(
+    tmp_path: Path, *, release_exists: bool = True, failure: str | None = None
+) -> Path:
     """Write a stand-in for `gh` that answers as the releases API does."""
     fake = tmp_path / "fake-gh"
     body = [
         "#!/usr/bin/env bash",
         "set -uo pipefail",
+    ]
+    if failure is not None:
+        body += [f"echo {shlex.quote(failure)} >&2", "exit 1"]
+    body += [
         'dir=""',
         'pattern=""',
         "while [ $# -gt 0 ]; do",
@@ -150,7 +161,12 @@ def _fake_gh(tmp_path: Path, *, release_exists: bool = True) -> Path:
 # wrote. The token the step declares is given the scope under test; the rest of
 # the environment is the step's own.
 def _run_download(
-    job: str, tmp_path: Path, *, scope: str, release_exists: bool = True
+    job: str,
+    tmp_path: Path,
+    *,
+    scope: str,
+    release_exists: bool = True,
+    failure: str | None = None,
 ) -> tuple[int, str, dict[str, str]]:
     """Run the job's download step with the stand-in on PATH."""
     block, declared = _download_step(job)
@@ -158,7 +174,9 @@ def _run_download(
     bin_dir.mkdir(exist_ok=True)
     gh = bin_dir / "gh"
     if not gh.exists():
-        gh.symlink_to(_fake_gh(tmp_path, release_exists=release_exists))
+        gh.symlink_to(
+            _fake_gh(tmp_path, release_exists=release_exists, failure=failure)
+        )
     output_file = tmp_path / "github-output"
     output_file.write_text("", encoding="utf-8")
     work = tmp_path / f"work-{scope}-{release_exists}"
@@ -232,3 +250,23 @@ def test_a_missing_release_is_reported_the_same_way(job: str, tmp_path: Path) ->
     )
     assert status != 0
     assert outputs["category"] == "draft_not_visible"
+
+
+#: A download failure that is not the not-found answer.
+OTHER_FAILURE: typ.Final = "HTTP 502: Bad Gateway (https://api.github.com/repos)"
+
+
+@pytest.mark.parametrize("job", JOBS)
+def test_any_other_download_failure_is_named_as_one(job: str, tmp_path: Path) -> None:
+    """A failure that is not the not-found answer is `download_failed`.
+
+    The not-found cases above cannot tell this branch from the one before
+    it: a step reporting every failure as `draft_not_visible` passes them
+    all, and would send an operator to the token scope for a server error.
+    """
+    status, stderr, outputs = _run_download(
+        job, tmp_path, scope="write", failure=OTHER_FAILURE
+    )
+    assert status != 0, f"{job} must fail when the download does"
+    assert outputs["category"] == "download_failed"
+    assert OTHER_FAILURE in stderr, "the real message must still reach the log"
