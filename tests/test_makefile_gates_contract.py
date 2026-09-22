@@ -17,20 +17,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+# A recipe line whose first non-whitespace character is `#` is handed to the
+# shell, which treats it as a comment: nothing runs. To a contract reading the
+# recipe as text such a line is indistinguishable from the gate it describes,
+# so commenting a gate out would leave every assertion in this module passing
+# while CI ran one command fewer. Both callers ask what the recipe runs, so the
+# comments are dropped once, here.
+#
+# Make's own `#` comments before a recipe are not tab-prefixed and never match
+# the recipe group at all.
 def _commands(target: str, makefile: str) -> str:
-    """Return the command lines of one target in `makefile`, comments dropped.
-
-    A recipe line whose first non-whitespace character is `#` is handed to
-    the shell, which treats it as a comment: nothing runs. To a contract
-    reading the recipe as text such a line is indistinguishable from the
-    gate it describes, so commenting a gate out would leave every
-    assertion in this module passing while CI ran one command fewer. Both
-    callers ask what the recipe runs, so the comments are dropped once,
-    here.
-
-    Make's own `#` comments before a recipe are not tab-prefixed and never
-    match the recipe group at all.
-    """
+    """Return the command lines of one target in `makefile`, comments dropped."""
     found = re.search(
         rf"^{re.escape(target)}:.*\n((?:\t.*\n)+)", makefile, flags=re.MULTILINE
     )
