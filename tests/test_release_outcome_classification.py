@@ -66,15 +66,13 @@ def _record_step(job: str) -> tuple[str, dict[str, str]]:
 # way GitHub resolves it, rather than supplied here. A mapping wired to the
 # wrong step, or dropped, then changes what the block reads, which is the
 # wiring these cases exist to hold.
+#
+# `results` is keyed as the expression names the result: `download` for
+# `steps.download.outcome`, `download.category` for
+# `steps.download.outputs.category`. A result the case does not supply
+# resolves to the empty string, as GitHub resolves a step that did not set it.
 def _resolve(job: str, value: str, results: dict[str, str]) -> str:
-    """Resolve one declared `env:` value against simulated step results.
-
-    `results` is keyed as the expression names the result: `download` for
-    `steps.download.outcome`, `download.category` for
-    `steps.download.outputs.category`. A result the case does not supply
-    resolves to the empty string, as GitHub resolves a step that did not
-    set it.
-    """
+    """Resolve one declared `env:` value against simulated step results."""
     match = _STEP_EXPRESSION.fullmatch(value.strip())
     assert match is not None, f"{job}: unresolvable recording expression {value}"
     step, field = match.groups()
@@ -176,6 +174,24 @@ def _assert_metric(emitted: Emitted, operation: str, expected_category: str) -> 
             "verification_failed",
             id="audit-fails-verification",
         ),
+        pytest.param(
+            "audit",
+            {
+                "download": "failure",
+                "download.category": "download_failed",
+                "verify": "skipped",
+            },
+            "download_failed",
+            id="audit-fails-to-download",
+        ),
+        # A download step that failed before writing its output leaves the
+        # category empty; the block's fallback must still name a cause.
+        pytest.param(
+            "audit",
+            {"download": "failure", "verify": "skipped"},
+            "download_failed",
+            id="audit-fails-before-categorising",
+        ),
     ],
 )
 def test_the_audit_block_classifies_each_outcome(
@@ -224,6 +240,21 @@ def test_the_audit_block_classifies_each_outcome(
             },
             "smoke_failed",
             id="smoke-fails-to-load",
+        ),
+        pytest.param(
+            {
+                "download": "failure",
+                "download.category": "download_failed",
+                "verify": "skipped",
+                "load": "skipped",
+            },
+            "download_failed",
+            id="smoke-fails-to-download",
+        ),
+        pytest.param(
+            {"download": "failure", "verify": "skipped", "load": "skipped"},
+            "download_failed",
+            id="smoke-fails-before-categorising",
         ),
     ],
 )

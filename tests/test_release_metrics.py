@@ -43,6 +43,22 @@ def test_the_invisible_draft_has_a_category_of_its_own() -> None:
 
 
 @pytest.mark.parametrize(
+    "category",
+    ["draft_not_visible", "download_failed", "verification_failed", "smoke_failed"],
+)
+def test_every_failure_category_reads_as_one_line(category: str) -> None:
+    """Each cause the recording blocks can emit is accepted and printed.
+
+    The refusals below cover what must not pass; this is the half that
+    must, so a category dropped from the closed set fails here rather than
+    in a release whose recording step can no longer name its cause.
+    """
+    assert metric_line("audit", "fail", category) == (
+        f"{METRIC_NAME} operation=audit result=fail error_category={category}"
+    ), f"a failure caused by {category} must read as one line naming it"
+
+
+@pytest.mark.parametrize(
     ("operation", "result", "category"),
     [
         pytest.param("publish", "pass", "none", id="an-operation-outside-the-set"),

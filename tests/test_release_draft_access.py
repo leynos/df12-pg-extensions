@@ -111,13 +111,10 @@ def _fake_gh(
 ) -> Path:
     """Write a stand-in for `gh` that answers as the releases API does."""
     fake = tmp_path / "fake-gh"
+    calls = shlex.quote(str(_calls_log(tmp_path)))
     body = [
         "#!/usr/bin/env bash",
         "set -uo pipefail",
-    ]
-    if failure is not None:
-        body += [f"echo {shlex.quote(failure)} >&2", "exit 1"]
-    body += [
         'dir=""',
         'pattern=""',
         "while [ $# -gt 0 ]; do",
@@ -132,6 +129,13 @@ def _fake_gh(
         "  *contents-write*) scope=write ;;",
         "  *) scope=other ;;",
         "esac",
+        # Every call is recorded with the scope it carried, so a case can
+        # assert what was downloaded rather than infer it from the status.
+        f'printf "%s %s\\n" "$scope" "${{pattern:-<every asset>}}" >> {calls}',
+    ]
+    if failure is not None:
+        body += [f"echo {shlex.quote(failure)} >&2", "exit 1"]
+    body += [
         'if [ "$scope" != "write" ] || [ "$release_exists" != "1" ]; then',
         f'  echo "{RELEASE_NOT_FOUND}" >&2',
         "  exit 1",
@@ -213,12 +217,54 @@ def _run_download(
 JOBS: typ.Final[tuple[str, ...]] = ("audit", "smoke")
 
 
+def _calls_log(tmp_path: Path) -> Path:
+    """Return where the stand-in records the calls it received."""
+    return tmp_path / "gh-calls"
+
+
+def _calls(tmp_path: Path) -> list[str]:
+    """Return the stand-in's calls as `<scope> <pattern>` lines, in order."""
+    log = _calls_log(tmp_path)
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+
+
 @pytest.mark.parametrize("job", JOBS)
 def test_the_write_scope_reaches_the_draft(job: str, tmp_path: Path) -> None:
     """Under `contents: write` the download succeeds and reports no fault."""
     status, _, outputs = _run_download(job, tmp_path, scope="write")
     assert status == 0, f"{job} must download the draft under the write scope"
-    assert outputs["category"] == "none"
+    assert outputs["category"] == "none", (
+        f"{job} reported {outputs['category']!r} for a successful download"
+    )
+
+
+def test_smoke_downloads_its_archive_and_then_its_sidecar(tmp_path: Path) -> None:
+    """Both smoke downloads run, under the write scope, and both files land.
+
+    The status alone cannot show this: dropping the sidecar download
+    leaves the step succeeding, and only the verify step after it would
+    notice.
+    """
+    archive = _EXPRESSIONS["${{ matrix.archive }}"]
+    status, _, _ = _run_download("smoke", tmp_path, scope="write")
+    assert status == 0, "smoke must download under the write scope"
+    assert _calls(tmp_path) == [f"write {archive}", f"write {archive}.sha256"], (
+        f"smoke must fetch the archive and then its sidecar: {_calls(tmp_path)}"
+    )
+    landed = tmp_path / "work-write-True" / "smoke-dist"
+    missing = [
+        name for name in (archive, f"{archive}.sha256") if not (landed / name).is_file()
+    ]
+    assert not missing, f"smoke did not leave {missing} in {landed}"
+
+
+def test_audit_downloads_every_asset_once(tmp_path: Path) -> None:
+    """The audit fetches the whole release in one call, under the write scope."""
+    status, _, _ = _run_download("audit", tmp_path, scope="write")
+    assert status == 0, "audit must download under the write scope"
+    assert _calls(tmp_path) == ["write <every asset>"], (
+        f"audit must fetch every asset in one call: {_calls(tmp_path)}"
+    )
 
 
 @pytest.mark.parametrize("job", JOBS)
