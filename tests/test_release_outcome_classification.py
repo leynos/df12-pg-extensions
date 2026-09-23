@@ -11,7 +11,9 @@ never ran.
 
 So the blocks are lifted out of `release.yml` and run, as the download
 blocks next door are, rather than read. Each case supplies the step
-outcomes GitHub would supply and asserts the line that comes out.
+results GitHub would supply, the block reads them through its own `env:`
+mapping resolved as GitHub resolves it, and the case asserts the line that
+comes out. A mapping wired to the wrong step or dropped therefore fails here.
 
 The case this module was written for is the smoke job's checksum. It
 used to run in the tail of the download step, after that step had
@@ -23,6 +25,7 @@ is what the `audit` job had always done.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import typing as typ
 from pathlib import Path
@@ -36,8 +39,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 METRIC_NAME: typ.Final[str] = "release_verification"
 
 
-def _record_step(job: str) -> str:
-    """Return the outcome-recording step's `run:` script for one job."""
+#: A step expression the recording blocks read: a step's outcome, or one of
+#: its outputs.
+_STEP_EXPRESSION: typ.Final = re.compile(
+    r"\$\{\{\s*steps\.([\w-]+)\.(outcome|outputs\.[\w-]+)\s*\}\}"
+)
+
+
+def _record_step(job: str) -> tuple[str, dict[str, str]]:
+    """Return the outcome-recording step's `run:` script and declared `env:`."""
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     )
@@ -47,17 +57,38 @@ def _record_step(job: str) -> str:
         if "release_metrics.py" in step.get("run", "")
     ]
     assert len(steps) == 1, f"{job} must record its outcome in exactly one step"
-    return steps[0]["run"]
+    return steps[0]["run"], {
+        str(name): str(value) for name, value in steps[0].get("env", {}).items()
+    }
 
 
-# `outcomes` is the environment the block reads, such as `DOWNLOAD_OUTCOME`;
-# `tmp_path` holds the step summary the block appends to.
-def _run_record(job: str, tmp_path: Path, **outcomes: str) -> Emitted:
-    """Run the job's recording block with the given step outcomes."""
+# The block's environment is resolved from the step's own `env:` mapping, the
+# way GitHub resolves it, rather than supplied here. A mapping wired to the
+# wrong step, or dropped, then changes what the block reads, which is the
+# wiring these cases exist to hold.
+def _resolve(job: str, value: str, results: dict[str, str]) -> str:
+    """Resolve one declared `env:` value against simulated step results.
+
+    `results` is keyed as the expression names the result: `download` for
+    `steps.download.outcome`, `download.category` for
+    `steps.download.outputs.category`. A result the case does not supply
+    resolves to the empty string, as GitHub resolves a step that did not
+    set it.
+    """
+    match = _STEP_EXPRESSION.fullmatch(value.strip())
+    assert match is not None, f"{job}: unresolvable recording expression {value}"
+    step, field = match.groups()
+    key = step if field == "outcome" else f"{step}.{field.removeprefix('outputs.')}"
+    return results.get(key, "")
+
+
+def _run_record(job: str, tmp_path: Path, results: dict[str, str]) -> Emitted:
+    """Run the job's recording block with the given simulated step results."""
+    block, declared = _record_step(job)
     summary = tmp_path / "summary"
     summary.write_text("", encoding="utf-8")
     completed = subprocess.run(
-        ["bash", "-c", _record_step(job)],
+        ["bash", "-c", block],
         cwd=REPO_ROOT,
         env={
             **{
@@ -65,7 +96,7 @@ def _run_record(job: str, tmp_path: Path, **outcomes: str) -> Emitted:
                 for key, value in os.environ.items()
                 if key in {"PATH", "HOME", "LANG", "TMPDIR"}
             },
-            **outcomes,
+            **{name: _resolve(job, value, results) for name, value in declared.items()},
             "GITHUB_STEP_SUMMARY": str(summary),
         },
         capture_output=True,
@@ -125,23 +156,23 @@ def _assert_metric(emitted: Emitted, operation: str, expected_category: str) -> 
     [
         pytest.param(
             "audit",
-            {"DOWNLOAD_OUTCOME": "success", "VERIFY_OUTCOME": "success"},
+            {"download": "success", "verify": "success"},
             "none",
             id="audit-passes",
         ),
         pytest.param(
             "audit",
             {
-                "DOWNLOAD_OUTCOME": "failure",
-                "DOWNLOAD_CATEGORY": "draft_not_visible",
-                "VERIFY_OUTCOME": "skipped",
+                "download": "failure",
+                "download.category": "draft_not_visible",
+                "verify": "skipped",
             },
             "draft_not_visible",
             id="audit-cannot-see-the-draft",
         ),
         pytest.param(
             "audit",
-            {"DOWNLOAD_OUTCOME": "success", "VERIFY_OUTCOME": "failure"},
+            {"download": "success", "verify": "failure"},
             "verification_failed",
             id="audit-fails-verification",
         ),
@@ -151,7 +182,7 @@ def test_the_audit_block_classifies_each_outcome(
     job: str, outcomes: dict[str, str], category: str, tmp_path: Path
 ) -> None:
     """Every way the audit job can end names its own cause."""
-    _assert_metric(_run_record(job, tmp_path, **outcomes), "audit", category)
+    _assert_metric(_run_record(job, tmp_path, outcomes), "audit", category)
 
 
 @pytest.mark.parametrize(
@@ -159,37 +190,37 @@ def test_the_audit_block_classifies_each_outcome(
     [
         pytest.param(
             {
-                "DOWNLOAD_OUTCOME": "success",
-                "VERIFY_OUTCOME": "success",
-                "LOAD_OUTCOME": "success",
+                "download": "success",
+                "verify": "success",
+                "load": "success",
             },
             "none",
             id="smoke-passes",
         ),
         pytest.param(
             {
-                "DOWNLOAD_OUTCOME": "failure",
-                "DOWNLOAD_CATEGORY": "draft_not_visible",
-                "VERIFY_OUTCOME": "skipped",
-                "LOAD_OUTCOME": "skipped",
+                "download": "failure",
+                "download.category": "draft_not_visible",
+                "verify": "skipped",
+                "load": "skipped",
             },
             "draft_not_visible",
             id="smoke-cannot-see-the-draft",
         ),
         pytest.param(
             {
-                "DOWNLOAD_OUTCOME": "success",
-                "VERIFY_OUTCOME": "failure",
-                "LOAD_OUTCOME": "skipped",
+                "download": "success",
+                "verify": "failure",
+                "load": "skipped",
             },
             "verification_failed",
             id="smoke-fails-its-checksum",
         ),
         pytest.param(
             {
-                "DOWNLOAD_OUTCOME": "success",
-                "VERIFY_OUTCOME": "success",
-                "LOAD_OUTCOME": "failure",
+                "download": "success",
+                "verify": "success",
+                "load": "failure",
             },
             "smoke_failed",
             id="smoke-fails-to-load",
@@ -206,7 +237,7 @@ def test_the_smoke_block_classifies_each_outcome(
     for the block to read, so a mismatch arrived as a failed download
     carrying `none`, and the metric was refused rather than recorded.
     """
-    _assert_metric(_run_record("smoke", tmp_path, **outcomes), "smoke", category)
+    _assert_metric(_run_record("smoke", tmp_path, outcomes), "smoke", category)
 
 
 def test_a_failure_carrying_no_cause_records_nothing(tmp_path: Path) -> None:
@@ -226,10 +257,12 @@ def test_a_failure_carrying_no_cause_records_nothing(tmp_path: Path) -> None:
     emitted = _run_record(
         "smoke",
         tmp_path,
-        DOWNLOAD_OUTCOME="failure",
-        DOWNLOAD_CATEGORY="none",
-        VERIFY_OUTCOME="skipped",
-        LOAD_OUTCOME="skipped",
+        {
+            "download": "failure",
+            "download.category": "none",
+            "verify": "skipped",
+            "load": "skipped",
+        },
     )
 
     assert emitted.status != 0, (
