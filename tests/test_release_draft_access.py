@@ -268,5 +268,8 @@ def test_any_other_download_failure_is_named_as_one(job: str, tmp_path: Path) ->
         job, tmp_path, scope="write", failure=OTHER_FAILURE
     )
     assert status != 0, f"{job} must fail when the download does"
-    assert outputs["category"] == "download_failed"
+    assert outputs["category"] == "download_failed", (
+        f"{job} reported {outputs['category']!r} for a failure that is not "
+        f"the not-found answer"
+    )
     assert OTHER_FAILURE in stderr, "the real message must still reach the log"
