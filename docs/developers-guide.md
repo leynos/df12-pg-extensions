@@ -40,6 +40,7 @@ and tests never fall back to a default for a missing key.
 | `scripts/build_in_container.sh` | container  | Fetches and verifies Theseus, checks out the pinned commit, builds with PGXS, packages `lib/` and `share/extension/`        |
 | `scripts/smoke_test.sh`         | runner     | Installs an archive into a fresh Theseus tree and runs `CREATE EXTENSION` plus `smoke_sql`                                  |
 | `scripts/build_manifest.py`     | runner     | `build`, `verify` and `check-archive`; `collect_extensions` is clock-free, the timestamp is injected by the `build` command |
+| `scripts/release_metrics.py`    | runner     | Prints one bounded `release_verification` line per verification job outcome, refusing any label outside its closed set      |
 
 Environment contract. Required by `build_extension.sh` and supplied by a matrix
 leg (or the `--smoke-leg` output) with no fallback: `EXT_NAME`, `EXT_PACKAGE`,
@@ -51,6 +52,22 @@ locally) and `SOURCE_DATE_EPOCH` (`0`, for reproducible tar mtimes). The
 wrapper exports the required set plus `DIST_DIR`, `MAX_GLIBC`,
 `THESEUS_RELEASES_URL` and `SOURCE_DATE_EPOCH` into the container, where
 `build_in_container.sh` requires all of them again.
+
+Release metrics. The `audit` and `smoke` jobs in `release.yml` each end with a
+recording step that runs
+`release_metrics.py --operation <op> --result <result>
+--error-category <category>`
+under `always()` and appends the line to the step summary as well as the log.
+The line reads
+`release_verification operation=<op> result=<result> error_category=<category>`.
+Every label comes from a closed set: `OPERATIONS` (`audit`, `smoke`), `RESULTS`
+(`pass`, `fail`) and `ERROR_CATEGORIES` (`none`, `draft_not_visible`,
+`download_failed`, `verification_failed`, `smoke_failed`). A passing result
+carries `none` and a failing one carries a real category; `metric_line` raises
+`MetricError` for any other combination or label, and `main` reports the
+refusal on standard error and exits 2, so the recording step fails rather than
+emit a label a dashboard cannot aggregate. Tags, archive names and error text
+stay in the job log and never become labels.
 
 ## Container build requirements
 
@@ -89,9 +106,62 @@ Updating the image digest: run
 Every `uses:` is pinned to a commit SHA, checkouts never persist credentials,
 and no runner step installs a tool or builds from source.
 
+### Release permissions, and why reading a draft needs `write`
+
+`release.yml` declares `contents: read` at the workflow level and raises
+individual jobs to `contents: write`. The rule is not "write where the job
+writes". It is:
+
+> Every job that runs a `gh release` subcommand needs `contents: write`,
+> including the jobs that only read.
+
+A draft release is invisible to a token holding only `contents: read`. The API
+reports it as absent rather than refusing access, so `gh release download`
+prints `release not found` and the job cannot tell an unpublished release from
+a missing one. Reading a draft, not writing to one, is what needs the scope.
+
+This is not theoretical. The `v1.0.0` release failed on exactly this: all six
+archives and the manifest were built and uploaded by the write-scoped jobs, and
+then `audit` and all six `smoke` legs failed against the draft they existed to
+verify, six legs out of six, while `manifest` had succeeded on the same command
+shape eleven seconds earlier.
+
+| Job              | Runs a `gh release` subcommand | Scope                     |
+| ---------------- | ------------------------------ | ------------------------- |
+| `prepare`        | no                             | inherits `contents: read` |
+| `create-release` | yes, `create`                  | `contents: write`         |
+| `build-assets`   | yes, `upload`                  | `contents: write`         |
+| `manifest`       | yes, `download` and `upload`   | `contents: write`         |
+| `audit`          | yes, `download` only           | `contents: write`         |
+| `smoke`          | yes, `download` only           | `contents: write`         |
+| `publish`        | yes, `edit`                    | `contents: write`         |
+
+`prepare` is the job that keeps this from collapsing into "write everywhere",
+and the contract holds it read-only for that reason.
+
+The verification jobs are deliberately not fed their assets through
+`upload-artifact` instead, which would let them run read-only. `audit` exists
+to re-download what is actually on the release rather than trust what the build
+produced, and `smoke` exists to load the published artefact. Passing build
+outputs sideways would leave both jobs green while deleting the property each
+is there to assert.
+
+`tests/test_release_permissions_contract.py` holds this rule over every job:
+any job running a `gh release` subcommand must declare `contents: write`. An
+earlier form of the contract required write "iff the job mutates the release",
+which read naturally, matched the author's intent, and passed on the
+configuration that fails every release.
+
 ## Tests
 
-`make test` runs pytest with Hypothesis:
+`make test` runs pytest with Hypothesis twice. The first pass,
+`python -m pytest -q`, collects the files below. The second,
+`python -m pytest -q --doctest-modules scripts`, collects the docstring
+examples in `scripts/`, which the first pass does not see. They are separate
+commands because a single invocation carrying both would count as one gate to a
+contract reading the recipe by command line.
+
+The first pass collects:
 
 - `tests/test_pgx_config.py`: configuration parsing and every rejection.
 - `tests/test_archive_rules.py`: path classification (exhaustive cases plus
@@ -104,6 +174,23 @@ and no runner step installs a tool or builds from source.
   token, and one test runs `scripts/build_extension.sh` against a fake `docker`
   to prove the container invocation. When adding a contract, mutate the
   protected line once and confirm the test fails.
+- `tests/test_makefile_gates_contract.py`: the Make recipes CI invokes, read
+  as commands rather than as text, so that two gates collapsed into one command
+  line fail rather than satisfying both descriptions.
+- `tests/test_release_permissions_contract.py`: the token scope every job
+  that runs a `gh release` subcommand must carry.
+- `tests/test_release_draft_access.py`: the release workflow's own download
+  blocks, lifted out and run under each token scope against a stand-in for
+  `gh`. It proves what happens on the workflow side of the GitHub boundary, not
+  that a draft is invisible to a read-scoped token; the `v1.0.0` runs are the
+  evidence for that.
+- `tests/test_release_metrics.py`: the closed label sets, and the refusal
+  of a result and category that disagree.
+- `tests/test_release_outcome_classification.py`: the release workflow's
+  own outcome-recording blocks, lifted out and run under each way a
+  verification job can end. A block that cannot emit its metric leaves a
+  failure with no aggregatable record, so the cases assert the line rather than
+  the exit status alone.
 
 ## Local prerequisites
 

@@ -18,8 +18,9 @@ MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 
 all: check-fmt lint test ## Run every commit gate
 
-test: ## Run the unit tests and workflow contracts
+test: ## Run the unit tests, docstring examples and workflow contracts
 	$(UV_ENV) $(UV) run --no-project --python 3.13 $(PYTEST_DEPS) python -m pytest -q
+	$(UV_ENV) $(UV) run --no-project --python 3.13 $(PYTEST_DEPS) python -m pytest -q --doctest-modules scripts
 
 lint: shellcheck markdownlint ruff ## Lint Python, shell and Markdown sources
 
