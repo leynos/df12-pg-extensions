@@ -454,3 +454,39 @@ def test_the_real_yamllint_fails_strictly_on_a_tracked_warning_only(
     assert "bad.yml" in failing.stdout
     assert "untracked-bad.yml" not in failing.stdout
     assert passing.returncode == 0, passing.stdout
+
+
+CANONICAL_ESTATE_BASE = {
+    "extends": "default",
+    "ignore": "**/charts/**/templates/\n",
+    "rules": {
+        "document-start": "disable",
+        "comments": {"min-spaces-from-content": 1},
+        "indentation": {
+            "spaces": "consistent",
+            "indent-sequences": "consistent",
+            "check-multi-line-strings": False,
+        },
+        "braces": {"min-spaces-inside": 0, "max-spaces-inside": 1},
+        "brackets": {"min-spaces-inside": 0, "max-spaces-inside": 1},
+        "line-length": {
+            "max": 120,
+            "allow-non-breakable-words": True,
+            "allow-non-breakable-inline-mappings": True,
+            "ignore": ".github/workflows/\n.github/actions/\n",
+        },
+        "truthy": {"allowed-values": ["true", "false"], "check-keys": False},
+    },
+}
+
+
+def test_the_estate_base_is_the_canonical_configuration() -> None:
+    """Every rule setting the gate depends on is the estate's.
+
+    A mutation that drops or changes any rule, heading or value fails here,
+    including a value that survives under a sibling rule. Comments may differ;
+    the Concordat
+    ``yaml-lint-baseline`` rule audits the same file by digest.
+    """
+    text = (REPO_ROOT / ".yamllint-estate.yml").read_text(encoding="utf-8")
+    assert yaml.safe_load(text) == CANONICAL_ESTATE_BASE
