@@ -209,6 +209,42 @@ GOOD = (
             GOOD.replace("\t$(ACTIONLINT)", "\ttrue"), False, id="no actionlint"
         ),
         pytest.param(
+            GOOD.replace("--strict --\n", "--strict -- || true\n"),
+            False,
+            id="yamllint failure ignored",
+        ),
+        pytest.param(
+            GOOD.replace("\tgit ls-files", "\t-git ls-files"),
+            False,
+            id="yamllint prefixed with a dash",
+        ),
+        pytest.param(
+            GOOD.replace("\tgit ls-files", "\t! git ls-files"),
+            False,
+            id="yamllint negated",
+        ),
+        pytest.param(
+            GOOD.replace("\t$(ACTIONLINT)", "\t$(ACTIONLINT) || true"),
+            False,
+            id="actionlint failure ignored",
+        ),
+        pytest.param(
+            GOOD.replace("\t$(ACTIONLINT)", "\t-$(ACTIONLINT)"),
+            False,
+            id="actionlint prefixed with a dash",
+        ),
+        pytest.param(
+            GOOD.replace("\t$(ACTIONLINT)", "\t! $(ACTIONLINT)"),
+            False,
+            id="actionlint negated",
+        ),
+        pytest.param(
+            "lint:\n\t$(MAKE) gate\ngate: yamllint actionlint\n"
+            + GOOD.split("\n", 1)[1].replace("\t$(ACTIONLINT)", "\t-$(ACTIONLINT)"),
+            False,
+            id="bypassed through delegation",
+        ),
+        pytest.param(
             "lint:\n\t$(MAKE) gate\ngate: yamllint actionlint\n"
             + GOOD.split("\n", 1)[1],
             True,
