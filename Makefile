@@ -1,4 +1,4 @@
-.PHONY: help all test lint ruff fmt check-fmt markdownlint shellcheck matrix smoke-leg
+.PHONY: help all test lint ruff fmt check-fmt markdownlint shellcheck yamllint actionlint matrix smoke-leg
 
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
@@ -7,6 +7,8 @@ PYTEST_DEPS = --with 'pytest>=8,<10' --with 'pyyaml>=6,<7' --with 'hypothesis>=6
 PY_SOURCES := scripts tests
 SHELL_SOURCES := scripts/build_extension.sh scripts/build_in_container.sh scripts/smoke_test.sh
 MDLINT ?= markdownlint-cli2
+YAMLLINT ?= yamllint
+ACTIONLINT ?= actionlint
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
 # Git does not ignore, so a new document is formatted before it is staged.
@@ -22,13 +24,21 @@ test: ## Run the unit tests, docstring examples and workflow contracts
 	$(UV_ENV) $(UV) run --no-project --python 3.13 $(PYTEST_DEPS) python -m pytest -q
 	$(UV_ENV) $(UV) run --no-project --python 3.13 $(PYTEST_DEPS) python -m pytest -q --doctest-modules scripts
 
-lint: shellcheck markdownlint ruff ## Lint Python, shell and Markdown sources
+lint: shellcheck markdownlint ruff yamllint actionlint ## Lint Python, shell, Markdown, YAML and workflow sources
 
 ruff: ## Lint Python sources
 	$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) check $(PY_SOURCES)
 
 shellcheck: ## Lint the shell scripts
 	shellcheck --shell=bash $(SHELL_SOURCES)
+
+# yamllint reads `.yamllint.yml`, which extends `.yamllint-estate.yml`, and
+# resolves that path against the working directory, so it runs from the root.
+yamllint: ## Lint every tracked YAML file strictly
+	git ls-files -z '*.yml' '*.yaml' | xargs -0 -r $(YAMLLINT) --strict --
+
+actionlint: ## Lint the GitHub Actions workflows, including their shell scripts
+	$(ACTIONLINT)
 
 markdownlint: ## Lint Markdown files
 	$(MDLINT) "**/*.md" "#.uv-cache" "#.uv-tools" "#.venv"

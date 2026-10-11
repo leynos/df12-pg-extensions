@@ -164,7 +164,7 @@ new tag, and consumers move by updating the manifest URL and digest they pin.
 
 ```bash
 make test        # unit tests and workflow contracts (uv, pytest)
-make lint        # shellcheck, ruff, markdownlint
+make lint        # shellcheck, ruff, markdownlint, yamllint, actionlint
 make check-fmt   # ruff format --check
 make matrix      # print the release matrix as JSON
 make smoke-leg   # print the configured pull-request smoke leg

@@ -92,8 +92,10 @@ Updating the image digest: run
 ## Workflows
 
 - `ci.yml` (pull requests, `workflow_dispatch`): a `checks` job on
-  `ubicloud-standard-2` runs `make check-fmt`, `make shellcheck`, `make ruff`,
-  markdownlint and `make test`; a `smoke-build` job builds the configured smoke
+  `ubicloud-standard-2` runs `make check-fmt`, markdownlint, the pinned
+  `install-yaml-lint` action, `make lint MDLINT=true` (shellcheck, ruff,
+  yamllint and actionlint; the markdownlint action has already linted the
+  Markdown) and `make test`; a `smoke-build` job builds the configured smoke
   leg, checks the archive, and runs the smoke test.
 - `release.yml` (tag push `v*`, one run per ref): `prepare` validates the
   tag and derives the matrix; `create-release` opens a draft; `build-assets`
@@ -174,6 +176,13 @@ The first pass collects:
   token, and one test runs `scripts/build_extension.sh` against a fake `docker`
   to prove the container invocation. When adding a contract, mutate the
   protected line once and confirm the test fails.
+- `tests/test_yaml_lint_contract.py`: the YAML lint gate. The judgement
+  functions are driven against fixtures first (a dropped `--strict`, a lost
+  pathspec, a bypassed failure, an installer after the gate), then applied to
+  the real Makefile and workflow. The boundary tests run `make yamllint` and
+  `make actionlint` in throwaway Git repositories with stand-in tools to prove
+  the tracked-files-only list and that a tool failure fails the target, and,
+  when `yamllint` is installed, with the real tool and the estate configuration.
 - `tests/test_makefile_gates_contract.py`: the Make recipes CI invokes, read
   as commands rather than as text, so that two gates collapsed into one command
   line fail rather than satisfying both descriptions.
@@ -198,8 +207,20 @@ The first pass collects:
 (`pyproject.toml` declares `requires-python = ">=3.12"`; the scripts use
 `tomllib` and only the standard library), `uv` for ruff and pytest (`make test`
 pins the interpreter to 3.13 through `uv run --python 3.13`), `shellcheck`,
-`markdownlint-cli2`, and Docker or Podman for a local build (`DOCKER=podman`).
-`make all` runs every gate.
+`markdownlint-cli2`, `yamllint` and `actionlint`, and Docker or Podman for a
+local build (`DOCKER=podman`). `make all` runs every gate.
+
+`make lint` runs `yamllint --strict` over every Git-tracked `*.yml` and
+`*.yaml` file, and `actionlint` over the workflows, which also runs
+`shellcheck` over their `run:` scripts. CI installs all three through
+`leynos/shared-actions/.github/actions/install-yaml-lint`, pinned to yamllint
+1.38.0, actionlint 1.7.12 and shellcheck 0.11.0; install the same versions
+locally, for example `uv tool install yamllint==1.38.0` and the actionlint
+release archive, so local and CI results agree. Run both from the repository
+root: yamllint resolves `.yamllint.yml`, which extends `.yamllint-estate.yml`
+(the estate base, copied verbatim), against the working directory.
+`.github/actionlint.yaml` declares the `ubicloud-*` runner labels the jobs use;
+without it actionlint reports them as unknown.
 
 ### Command environment
 
