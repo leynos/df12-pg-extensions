@@ -38,10 +38,12 @@ jobs:
 
       - name: Check formatting
         run: make check-fmt
-      - name: Lint shell scripts
-        run: make shellcheck
-      - name: Lint Python
-        run: make ruff
+      - name: Install the YAML lint tools
+        uses: leynos/shared-actions/.github/actions/install-yaml-lint@26c918632c5413039a84358fafe012a4399a9ec7
+      - name: Lint shell, Python and YAML
+        # The pinned markdownlint action above already lints Markdown, so the
+        # local markdownlint-cli2 call is replaced by a no-op here.
+        run: make lint MDLINT=true
       - name: Unit tests and workflow contracts
         run: make test
 

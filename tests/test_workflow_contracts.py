@@ -395,7 +395,7 @@ def test_ci_checks_job_checks_out_and_lints_markdown(ci: dict[str, Any]) -> None
 
 def test_ci_checks_job_runs_every_gate(ci: dict[str, Any]) -> None:
     """The checks job runs the same Make targets a contributor runs locally."""
-    for command in ("make check-fmt", "make shellcheck", "make ruff", "make test"):
+    for command in ("make check-fmt", "make lint MDLINT=true", "make test"):
         step_running(ci, "checks", command)
 
 
