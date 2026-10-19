@@ -376,11 +376,30 @@ def test_ci_triggers(ci: dict[str, Any]) -> None:
     assert "workflow_dispatch" in ci["on"], "CI must be dispatchable"
 
 
-def test_ci_jobs_run_on_ubicloud_standard_2(ci: dict[str, Any]) -> None:
-    """Developer-blocking Linux jobs run on the exact ubicloud-standard-2 label."""
+#: The runner-selection expression every developer-blocking job carries. A fork
+#: cannot obtain an Ubicloud runner, and a Dependabot pull request is kept off
+#: Ubicloud because hosted minutes cost nothing on a public repository. The
+#: pull request's author is tested, not `github.actor`: the actor is whoever
+#: triggered the run, so a person pushing to a Dependabot branch would flip it.
+RUNNER_SELECTION = (
+    "${{ (github.event.pull_request.head.repo.fork "
+    "|| github.event.pull_request.user.login == 'dependabot[bot]') "
+    "&& 'ubuntu-latest' || 'ubicloud-standard-2' }}"
+)
+
+
+def test_ci_jobs_run_on_ubicloud_standard_2_except_for_forks_and_dependabot(
+    ci: dict[str, Any],
+) -> None:
+    """Developer-blocking Linux jobs select ubicloud-standard-2 by the exact expression.
+
+    The expression is compared whole, so a missing Dependabot arm, a
+    ``github.actor`` stand-in or swapped arms all fail.
+    """
     for job, spec in ci["jobs"].items():
-        assert spec["runs-on"] == "ubicloud-standard-2", (
-            f"{job}: must run on ubicloud-standard-2"
+        assert spec["runs-on"] == RUNNER_SELECTION, (
+            f"{job}: must select its runner by {RUNNER_SELECTION!r}, "
+            f"got {spec['runs-on']!r}"
         )
 
 
