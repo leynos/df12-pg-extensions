@@ -376,11 +376,80 @@ def test_ci_triggers(ci: dict[str, Any]) -> None:
     assert "workflow_dispatch" in ci["on"], "CI must be dispatchable"
 
 
-def test_ci_jobs_run_on_ubicloud_standard_2(ci: dict[str, Any]) -> None:
-    """Developer-blocking Linux jobs run on the exact ubicloud-standard-2 label."""
+#: The runner-selection expression every developer-blocking job carries. A fork
+#: cannot obtain an Ubicloud runner, and a Dependabot pull request is kept off
+#: Ubicloud because hosted minutes cost nothing on a public repository. The
+#: pull request's author is tested, not `github.actor`: the actor is whoever
+#: triggered the run, so a person pushing to a Dependabot branch would flip it.
+RUNNER_SELECTION = (
+    "${{ (github.event.pull_request.head.repo.fork "
+    "|| github.event.pull_request.user.login == 'dependabot[bot]') "
+    "&& 'ubuntu-latest' || 'ubicloud-standard-2' }}"
+)
+
+
+def select_runner(declaration: str, *, fork: bool | None, author: str) -> str:
+    """Evaluate the runner-selection expression for one event.
+
+    Only the shape this repository writes is modelled: the fork field or the
+    Dependabot author test, then the hosted and the owned arm. Anything else
+    raises, so a changed expression cannot be silently mis-evaluated.
+
+    Parameters
+    ----------
+    declaration
+        A job's parsed ``runs-on`` value.
+    fork
+        The fork field's value, or None when the event has no pull request.
+    author
+        The pull request's author login, or an empty string without one.
+
+    Returns
+    -------
+    str
+        The label the event selects.
+    """
+    assert declaration == RUNNER_SELECTION, f"unmodelled expression: {declaration!r}"
+    hosted = bool(fork) or author == "dependabot[bot]"
+    return "ubuntu-latest" if hosted else "ubicloud-standard-2"
+
+
+@pytest.mark.parametrize(
+    ("event", "fork", "author", "expected"),
+    [
+        ("a person's pull request", False, "alice", "ubicloud-standard-2"),
+        ("a fork's pull request", True, "alice", "ubuntu-latest"),
+        ("Dependabot's pull request", False, "dependabot[bot]", "ubuntu-latest"),
+        ("a dispatch", None, "", "ubicloud-standard-2"),
+    ],
+)
+def test_every_ci_job_lands_where_the_event_requires(
+    ci: dict[str, Any], event: str, fork: bool | None, author: str, expected: str
+) -> None:
+    """Evaluate each job's checked-in declaration for four kinds of event.
+
+    A dispatch sets neither property, and GitHub reads a missing property as an
+    empty string, which is falsy.
+    """
     for job, spec in ci["jobs"].items():
-        assert spec["runs-on"] == "ubicloud-standard-2", (
-            f"{job}: must run on ubicloud-standard-2"
+        landed = select_runner(spec["runs-on"], fork=fork, author=author)
+        assert landed == expected, (
+            f"{job}: {event} lands on {landed!r}, not {expected!r}"
+        )
+
+
+def test_ci_jobs_run_on_ubicloud_standard_2_except_for_forks_and_dependabot(
+    ci: dict[str, Any],
+) -> None:
+    """Developer-blocking Linux jobs select ubicloud-standard-2 by the exact expression.
+
+    The expression is compared whole, so a missing Dependabot arm, a
+    ``github.actor`` stand-in or swapped arms all fail.
+    """
+    for job, spec in ci["jobs"].items():
+        assert spec["runs-on"] == RUNNER_SELECTION, (
+            f"{job}: must select its runner by {RUNNER_SELECTION!r}, "
+            f"got {spec['runs-on']!r}"
         )
 
 

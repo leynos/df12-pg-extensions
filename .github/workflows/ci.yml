@@ -15,7 +15,17 @@ permissions:
 jobs:
   checks:
     name: Lint, format and workflow contracts
-    runs-on: ubicloud-standard-2
+    # A pull request from a fork cannot obtain an Ubicloud runner, so it falls
+    # back to the hosted pool; so does a Dependabot pull request, which
+    # GitHub-hosted runners serve at no charge on a public repository. The
+    # author is tested, not the actor, because the actor is whoever triggered
+    # the run, so a person pushing to a Dependabot branch would flip the
+    # runner. The continuation stays at this indent: a deeper one keeps its
+    # line break inside the expression.
+    runs-on: >-
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -49,7 +59,11 @@ jobs:
 
   smoke-build:
     name: Smoke build (configured smoke leg)
-    runs-on: ubicloud-standard-2
+    # As `checks`: a fork or a Dependabot pull request takes the hosted arm.
+    runs-on: >-
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0

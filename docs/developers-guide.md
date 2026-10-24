@@ -91,12 +91,17 @@ Updating the image digest: run
 
 ## Workflows
 
-- `ci.yml` (pull requests, `workflow_dispatch`): a `checks` job on
-  `ubicloud-standard-2` runs `make check-fmt`, markdownlint, the pinned
-  `install-yaml-lint` action, `make lint MDLINT=true` (shellcheck, ruff,
-  yamllint and actionlint; the markdownlint action has already linted the
-  Markdown) and `make test`; a `smoke-build` job builds the configured smoke
-  leg, checks the archive, and runs the smoke test.
+- `ci.yml` (pull requests, `workflow_dispatch`): both jobs run on
+  `ubicloud-standard-2`, except that a pull request from a fork (which cannot
+  obtain an Ubicloud runner) or one Dependabot opened (hosted minutes cost
+  nothing on a public repository, and the pull request's author is tested, not
+  `github.actor`, which is whoever triggered the run) falls back to
+  `ubuntu-latest`; a Dependabot pull request therefore builds cold. A `checks`
+  job runs `make check-fmt`, markdownlint, the pinned `install-yaml-lint`
+  action, `make lint MDLINT=true` (shellcheck, ruff, yamllint and actionlint;
+  the markdownlint action has already linted the Markdown) and `make test`; a
+  `smoke-build` job builds the configured smoke leg, checks the archive, and
+  runs the smoke test.
 - `release.yml` (tag push `v*`, one run per ref): `prepare` validates the
   tag and derives the matrix; `create-release` opens a draft; `build-assets`
   builds and uploads each archive and sidecar; `manifest` re-downloads every
