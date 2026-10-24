@@ -388,6 +388,56 @@ RUNNER_SELECTION = (
 )
 
 
+def select_runner(declaration: str, *, fork: bool | None, author: str) -> str:
+    """Evaluate the runner-selection expression for one event.
+
+    Only the shape this repository writes is modelled: the fork field or the
+    Dependabot author test, then the hosted and the owned arm. Anything else
+    raises, so a changed expression cannot be silently mis-evaluated.
+
+    Parameters
+    ----------
+    declaration
+        A job's parsed ``runs-on`` value.
+    fork
+        The fork field's value, or None when the event has no pull request.
+    author
+        The pull request's author login, or an empty string without one.
+
+    Returns
+    -------
+    str
+        The label the event selects.
+    """
+    assert declaration == RUNNER_SELECTION, f"unmodelled expression: {declaration!r}"
+    hosted = bool(fork) or author == "dependabot[bot]"
+    return "ubuntu-latest" if hosted else "ubicloud-standard-2"
+
+
+@pytest.mark.parametrize(
+    ("event", "fork", "author", "expected"),
+    [
+        ("a person's pull request", False, "alice", "ubicloud-standard-2"),
+        ("a fork's pull request", True, "alice", "ubuntu-latest"),
+        ("Dependabot's pull request", False, "dependabot[bot]", "ubuntu-latest"),
+        ("a dispatch", None, "", "ubicloud-standard-2"),
+    ],
+)
+def test_every_ci_job_lands_where_the_event_requires(
+    ci: dict[str, Any], event: str, fork: bool | None, author: str, expected: str
+) -> None:
+    """Evaluate each job's checked-in declaration for four kinds of event.
+
+    A dispatch sets neither property, and GitHub reads a missing property as an
+    empty string, which is falsy.
+    """
+    for job, spec in ci["jobs"].items():
+        landed = select_runner(spec["runs-on"], fork=fork, author=author)
+        assert landed == expected, (
+            f"{job}: {event} lands on {landed!r}, not {expected!r}"
+        )
+
+
 def test_ci_jobs_run_on_ubicloud_standard_2_except_for_forks_and_dependabot(
     ci: dict[str, Any],
 ) -> None:
