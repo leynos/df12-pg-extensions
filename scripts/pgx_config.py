@@ -154,12 +154,14 @@ class Config:
 
 
 def _require(table: dict[str, object], key: str, context: str) -> object:
+    """Return ``table[key]``, or raise ``ConfigError`` naming the missing key."""
     if key not in table:
         raise ConfigError(f"{context}: missing required key '{key}'")
     return table[key]
 
 
 def _require_table(value: object, context: str) -> dict[str, object]:
+    """Return ``value`` when it is a TOML table, else raise ``ConfigError``."""
     if not isinstance(value, dict):
         raise ConfigError(f"{context}: must be a table, got {type(value).__name__}")
     return value
@@ -168,6 +170,7 @@ def _require_table(value: object, context: str) -> dict[str, object]:
 def _require_str(
     table: dict[str, object], key: str, context: str, pattern: re.Pattern[str]
 ) -> str:
+    """Return the required string at ``key`` when it matches ``pattern``."""
     value = _require(table, key, context)
     if not isinstance(value, str) or not pattern.match(value):
         raise ConfigError(
@@ -177,6 +180,7 @@ def _require_str(
 
 
 def _require_url(table: dict[str, object], key: str, context: str) -> str:
+    """Return the required ``https://`` URL at ``key`` without a trailing slash."""
     value = _require(table, key, context)
     if not isinstance(value, str) or not value.startswith("https://"):
         raise ConfigError(f"{context}: '{key}' must be an https:// URL, got {value!r}")
@@ -186,6 +190,7 @@ def _require_url(table: dict[str, object], key: str, context: str) -> str:
 def _require_list(
     table: dict[str, object], key: str, context: str, pattern: re.Pattern[str]
 ) -> tuple[str, ...]:
+    """Return the non-empty list at ``key``, each entry matching ``pattern`` once."""
     value = _require(table, key, context)
     if not isinstance(value, list) or not value:
         raise ConfigError(f"{context}: '{key}' must be a non-empty list")
@@ -202,6 +207,7 @@ def _require_list(
 
 
 def _parse_extension(raw: object, index: int) -> Extension:
+    """Validate one ``extensions`` entry and build its ``Extension``."""
     context = f"extensions[{index}]"
     table = _require_table(raw, context)
     smoke_sql = _require(table, "smoke_sql", context)
@@ -219,6 +225,7 @@ def _parse_extension(raw: object, index: int) -> Extension:
 
 
 def _parse_targets(raw: object) -> tuple[Target, ...]:
+    """Validate the ``targets`` table and build one ``Target`` per triple."""
     table = _require_table(raw, "targets")
     if not table:
         raise ConfigError("targets: at least one target is required")
@@ -244,6 +251,7 @@ def _parse_smoke(
     config_versions: tuple[str, ...],
     targets: tuple[Target, ...],
 ) -> SmokeLeg:
+    """Validate the ``smoke`` table against the configured extensions and targets."""
     table = _require_table(raw, "smoke")
     package = _require_str(table, "package", "smoke", _PACKAGE_RE)
     if package not in {extension.package for extension in extensions}:

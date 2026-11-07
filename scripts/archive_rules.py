@@ -88,6 +88,7 @@ def classify_path(path: str) -> str | None:
 
 
 def _validate_directory(member: tarfile.TarInfo) -> None:
+    """Refuse a directory entry with a bad path or outside the allowed prefixes."""
     canonical = _normalised(member.name)
     if canonical is None:
         raise ArchiveError(f"directory entry has an unacceptable path: {member.name!r}")
@@ -100,6 +101,7 @@ def _validate_directory(member: tarfile.TarInfo) -> None:
 
 
 def _validate_file(member: tarfile.TarInfo, seen: list[str]) -> str:
+    """Return a regular file's accepted path; refuse other types, strays and repeats."""
     if not member.isreg():
         raise ArchiveError(
             f"only regular files and directories are allowed, got {member.name!r} "
@@ -114,6 +116,7 @@ def _validate_file(member: tarfile.TarInfo, seen: list[str]) -> str:
 
 
 def _require_control_file(files: list[str]) -> None:
+    """Refuse an archive with no files or no ``share/extension/*.control`` file."""
     if not files:
         raise ArchiveError("archive contains no files")
     has_control = any(

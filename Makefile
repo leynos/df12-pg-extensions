@@ -1,4 +1,4 @@
-.PHONY: help all test lint ruff fmt check-fmt markdownlint shellcheck yamllint actionlint matrix smoke-leg
+.PHONY: help all test lint ruff interrogate fmt check-fmt markdownlint shellcheck yamllint actionlint matrix smoke-leg
 
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
@@ -24,7 +24,30 @@ test: ## Run the unit tests, docstring examples and workflow contracts
 	$(UV_ENV) $(UV) run --no-project --python 3.13 $(PYTEST_DEPS) python -m pytest -q
 	$(UV_ENV) $(UV) run --no-project --python 3.13 $(PYTEST_DEPS) python -m pytest -q --doctest-modules scripts
 
-lint: shellcheck markdownlint ruff yamllint actionlint ## Lint Python, shell, Markdown, YAML and workflow sources
+lint: shellcheck markdownlint ruff interrogate yamllint actionlint ## Lint Python, shell, Markdown, YAML and workflow sources
+
+# Interrogate scans each target recursively, subject to its default exclusions.
+INTERROGATE_VERSION ?= 1.7.0
+INTERROGATE_TARGETS ?= $(PY_SOURCES)
+# Level 2 prints a MISSED row per undocumented definition, which the
+# `interrogate` recipe below looks for: the rounded percentage alone can pass a
+# lone gap.
+INTERROGATE_FLAGS ?= -vv --fail-under 100
+INTERROGATE ?= $(UV_ENV) $(UV) tool run --python 3.13 --from 'interrogate==$(INTERROGATE_VERSION)' interrogate
+
+# Interrogate rounds its percentage to one decimal, so `--fail-under 100` alone
+# can pass a lone gap in a large repository. This recipe also fails when `grep`
+# finds a MISSED row in the report on standard output, which `-vv` or higher
+# prints for each undocumented definition.
+interrogate: ## Enforce complete Python docstring coverage
+	@report="$$($(INTERROGATE) $(INTERROGATE_FLAGS) $(INTERROGATE_TARGETS))"; \
+	  status=$$?; \
+	  printf '%s\n' "$$report"; \
+	  test "$$status" -eq 0 || exit "$$status"; \
+	  if printf '%s\n' "$$report" | grep -q '| *MISSED *|'; then \
+	    printf '%s\n' 'interrogate: undocumented definitions remain; see the MISSED rows above' >&2; \
+	    exit 1; \
+	  fi
 
 ruff: ## Lint Python sources
 	$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) check $(PY_SOURCES)

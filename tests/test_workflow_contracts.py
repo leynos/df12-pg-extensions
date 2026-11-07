@@ -171,6 +171,7 @@ def test_release_runs_serialise_per_ref(release: dict[str, Any]) -> None:
 
 
 def _tag_regex(release: dict[str, Any]) -> re.Pattern[str]:
+    """Compile the bash regex the prepare job's resolve step applies to the ref name."""
     steps = steps_of(release, "prepare")
     resolve = next(step for step in steps if step.get("id") == "resolve")
     match = re.search(r'\[\[ "\$REF_NAME" =~ (\S+) \]\]', resolve["run"])
