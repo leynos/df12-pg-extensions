@@ -80,6 +80,7 @@ def test_classify_path_never_escapes(parts: list[str]) -> None:
 
 
 def _member(name: str, kind: bytes = tarfile.REGTYPE) -> tarfile.TarInfo:
+    """Build a tar member called ``name`` of type ``kind``."""
     info = tarfile.TarInfo(name)
     info.type = kind
     return info

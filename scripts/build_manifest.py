@@ -158,6 +158,7 @@ def describe_archive(path: Path) -> tuple[str, int, tuple[str, ...]]:
 
 
 def _reject_unexpected_archives(dist: Path, expected: set[str]) -> None:
+    """Refuse a ``*.tar.gz`` in ``dist`` that the configuration does not expect."""
     try:
         present = {path.name for path in dist.glob("*.tar.gz")}
     except OSError as err:
@@ -330,6 +331,7 @@ def verify_manifest(config: Config, dist: Path, tag: str, repository: str) -> in
 
 
 def _parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the manifest check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("extensions.toml"))
     parser.add_argument("--dist", type=Path, help="directory holding the archives")
