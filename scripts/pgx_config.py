@@ -180,7 +180,10 @@ def _require_str(
 
 
 def _require_url(table: dict[str, object], key: str, context: str) -> str:
-    """Return the required ``https://`` URL at ``key`` without a trailing slash."""
+    """Return the ``https://`` string at ``key`` without trailing slashes.
+
+    Only the prefix is checked, not that a host follows it.
+    """
     value = _require(table, key, context)
     if not isinstance(value, str) or not value.startswith("https://"):
         raise ConfigError(f"{context}: '{key}' must be an https:// URL, got {value!r}")
@@ -190,7 +193,10 @@ def _require_url(table: dict[str, object], key: str, context: str) -> str:
 def _require_list(
     table: dict[str, object], key: str, context: str, pattern: re.Pattern[str]
 ) -> tuple[str, ...]:
-    """Return the non-empty list at ``key``, each entry matching ``pattern`` once."""
+    """Return the non-empty list at ``key`` as a tuple of distinct strings.
+
+    Every entry must match ``pattern``; a repeated entry is refused.
+    """
     value = _require(table, key, context)
     if not isinstance(value, list) or not value:
         raise ConfigError(f"{context}: '{key}' must be a non-empty list")
